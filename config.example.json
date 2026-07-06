@@ -1,0 +1,6 @@
+{
+  "VAPEUR_API_KEY": "",
+  "request_timeout": 600,
+  "request_retries": 1,
+  "retry_delay": 2
+}
