@@ -212,6 +212,24 @@ class AgentRuntime:
             "已用复核重做图替换 {count} 张同槽位旧图。",
         )
 
+    @staticmethod
+    def _output_by_name(records, image_name):
+        requested = Path(str(image_name or "")).name.casefold()
+        outputs = [
+            item
+            for item in records
+            if item.kind == "output" and Path(item.path).name.casefold() == requested
+        ]
+        if len(outputs) != 1:
+            available = [
+                Path(item.path).name for item in records if item.kind == "output"
+            ]
+            raise ValueError(
+                f"Generated image filename not found: {image_name}. "
+                f"Available filenames: {json.dumps(available, ensure_ascii=False)}"
+            )
+        return outputs[0]
+
     def _enforce_output_contract(self, skill_name, image_paths, image_outputs, prompt=""):
         image_outputs = self._replace_named_retries(image_outputs)
         if skill_name == "batch-clothing-white-bg-images" and image_paths:
@@ -412,16 +430,15 @@ class AgentRuntime:
             )
             return json.dumps([item.disk_dict() for item in records], ensure_ascii=False)
 
-        async def inspect_generated_image(image_index: int, checklist: str) -> str:
-            """Visually inspect a generated image against a concise quality checklist."""
-            outputs = [item for item in runtime.artifact_store.records if item.kind == "output"]
-            if image_index < 1 or image_index > len(outputs):
-                raise ValueError("image_index is out of range for generated artifacts.")
+        async def inspect_generated_image(image_name: str, checklist: str) -> str:
+            """Inspect one generated image by its exact filename returned by an image tool."""
+            output = runtime._output_by_name(runtime.artifact_store.records, image_name)
+            filename = Path(output.path).name
             runtime._record(
                 "tool_start",
-                f"正在复核第 {image_index} 张生成图片…",
+                f"正在复核生成图片：{filename}",
                 tool="inspect_generated_image",
-                index=image_index,
+                image_name=filename,
             )
             response = await runtime.client.responses.create(
                 model=runtime.agent_model,
@@ -432,7 +449,7 @@ class AgentRuntime:
                             {"type": "input_text", "text": checklist},
                             {
                                 "type": "input_image",
-                                "image_url": image_data_url(outputs[image_index - 1].path),
+                                "image_url": image_data_url(output.path),
                                 "detail": "high",
                             },
                         ],
@@ -443,9 +460,9 @@ class AgentRuntime:
             )
             runtime._record(
                 "tool_end",
-                f"第 {image_index} 张图片复核完成",
+                f"生成图片复核完成：{filename}",
                 tool="inspect_generated_image",
-                index=image_index,
+                image_name=filename,
             )
             return response.output_text
 
@@ -546,6 +563,7 @@ Original input files are numbered in the order returned by list_input_files.
 Use edit_images when visual references must be preserved and generate_image when there is no visual reference.
 When image artifacts are required, a final text response before an image tool has successfully returned is invalid.
 Inspect important generated images against the skill quality gate. Retry only when a concrete defect is found.
+Call inspect_generated_image with the exact output filename returned by generate_image or edit_images. Never infer an image from list position, numeric index, or tool completion order.
 For a retry, keep the original leading numeric slot and add `_重做` or `_final` to output_name so the old candidate is replaced.
 Use run_skill_script only for scripts explicitly shipped under this skill's scripts directory.
 Finish with a concise Chinese summary. Do not expose credentials or signed URL query parameters.
