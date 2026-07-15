@@ -2,9 +2,19 @@ import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 
 const PROGRESS_EVENT = "comfyui-llm-agent-progress";
+const LEGACY_OUTPUTS = new Set(["output_path", "artifacts_json", "state_json"]);
 
 function findNode(nodeId) {
     return app.graph?._nodes?.find((node) => String(node.id) === String(nodeId));
+}
+
+function removeLegacyOutputs(node) {
+    for (let index = (node.outputs?.length || 0) - 1; index >= 0; index -= 1) {
+        if (LEGACY_OUTPUTS.has(node.outputs[index]?.name)) {
+            node.removeOutput(index);
+        }
+    }
+    node.setDirtyCanvas?.(true, true);
 }
 
 app.registerExtension({
@@ -17,6 +27,7 @@ app.registerExtension({
         const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             const result = originalOnNodeCreated?.apply(this, arguments);
+            removeLegacyOutputs(this);
             const outputDir = this.widgets?.find((widget) => widget.name === "output_dir");
             if (outputDir) {
                 outputDir.computeSize = () => [0, -4];
@@ -73,6 +84,13 @@ app.registerExtension({
                 log.value = this._agentProgressLines.join("\n");
                 log.scrollTop = log.scrollHeight;
             };
+            return result;
+        };
+
+        const originalOnConfigure = nodeType.prototype.onConfigure;
+        nodeType.prototype.onConfigure = function () {
+            const result = originalOnConfigure?.apply(this, arguments);
+            removeLegacyOutputs(this);
             return result;
         };
     },
