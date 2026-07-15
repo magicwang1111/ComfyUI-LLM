@@ -2,5 +2,16 @@
   "VAPEUR_API_KEY": "",
   "request_timeout": 600,
   "request_retries": 1,
-  "retry_delay": 2
+  "retry_delay": 2,
+  "allowed_input_roots": [],
+  "allowed_output_roots": [],
+  "oss_enabled": false,
+  "oss_endpoint": "https://oss-cn-hangzhou.aliyuncs.com",
+  "oss_region": "cn-hangzhou",
+  "oss_bucket": "",
+  "oss_prefix": "GouMEE-Comfyui-tmp",
+  "oss_signed_url_expires": 86400,
+  "oss_access_key_id": "",
+  "oss_access_key_secret": "",
+  "oss_session_token": ""
 }

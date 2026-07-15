@@ -1,0 +1,6 @@
+openai-agents>=0.17,<0.18
+pydantic>=2.12.3,<2.13
+openai>=2.36,<2.45
+httpx
+numpy
+pillow
