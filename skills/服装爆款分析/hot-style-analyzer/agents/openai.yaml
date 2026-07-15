@@ -1,0 +1,4 @@
+interface:
+  display_name: "爆款分析"
+  short_description: "服装图片爆款基因诊断与五张分析卡片"
+  default_prompt: "Use $hot-style-analyzer to diagnose a garment image's hot-seller genes and output exactly five visual analysis cards."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Outfit Flatlay Stylist"
+  short_description: "Create white-background editorial outfit trend boards"
+  default_prompt: "Use $outfit-flatlay-stylist to create a white-background editorial outfit trend board from a clothing style or hero item, using the reference-image layout."

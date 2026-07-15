@@ -1,0 +1,4 @@
+interface:
+  display_name: "世界买手"
+  short_description: "全球服装找款与单品买手分析"
+  default_prompt: "Use $world-buyer to find five globally valuable fashion products, create one buyer analysis card for each product, and include one contact-sheet thumbnail overview as the sixth formal output image."

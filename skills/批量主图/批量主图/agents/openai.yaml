@@ -1,0 +1,4 @@
+interface:
+  display_name: "批量服装电商主图"
+  short_description: "批量为服装商品生成3-5张电商主图套图，适合多产品处理"
+  default_prompt: "Use $batch-clothing-product-images 为服装产品批量生成 3-5 张电商主图套图。"

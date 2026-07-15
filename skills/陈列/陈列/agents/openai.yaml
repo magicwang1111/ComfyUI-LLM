@@ -1,0 +1,4 @@
+interface:
+  display_name: "服装陈列图生图"
+  short_description: "按模板或默认showroom挂杆生成陈列图"
+  default_prompt: "Use $clothing-display-image-to-image to turn garment references into one premium clothing display image; follow my display template first if provided, otherwise use the original default showroom rack style."

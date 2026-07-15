@@ -1,0 +1,4 @@
+interface:
+  display_name: "印花衍生"
+  short_description: "先让用户选择方向，再从参考图生成服装面料印花衍生款"
+  default_prompt: "Use $print-pattern-derivation with the uploaded print or pattern reference. First ask the user to choose from the seven output modes instead of generating immediately, unless the user already requested a specific mode or full set."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "批量AI换装"
+  short_description: "提取服装结构、小装饰和附着结构，并避免过度强化"
+  default_prompt: "Use $batch-ai-tryon to batch-generate 4K vertical AI try-on images from one model photo and a clothing folder, first extracting garment structure, complex texture, small high-value details, and the support structures those details attach to, calibrating them to avoid exaggeration or support-structure drift, then keeping model identity and shoes consistent across the batch."

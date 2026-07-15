@@ -1,0 +1,4 @@
+interface:
+  display_name: "服装设计分析"
+  short_description: "生成三张真实质感服装设计图"
+  default_prompt: "Use $fashion-design-analysis to create a Sony A7R IV style photorealistic garment design from a text brief or brand references, then output a white-background real garment style image, a real-detail breakdown board, and a white-background model three-view."
