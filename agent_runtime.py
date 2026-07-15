@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -140,20 +141,69 @@ class AgentRuntime:
             )
         return [{"role": "user", "content": content}]
 
-    def _enforce_output_contract(self, skill_name, image_paths, image_outputs):
-        if skill_name != "batch-clothing-white-bg-images" or not image_paths:
-            return image_outputs
-        expected = len(image_paths)
-        rejected = image_outputs[:-expected]
+    def _remove_rejected_images(self, image_outputs, kept, message):
+        kept_ids = {id(item) for item in kept}
+        rejected = [item for item in image_outputs if id(item) not in kept_ids]
         for item in rejected:
             Path(item.path).unlink(missing_ok=True)
-            self.artifact_store.records.remove(item)
+        image_ids = {id(item) for item in image_outputs}
+        non_image_records = [
+            item
+            for item in self.artifact_store.records
+            if id(item) not in image_ids
+        ]
+        self.artifact_store.records = non_image_records + kept
         if rejected:
-            self._record(
-                "status",
-                f"已移除 {len(rejected)} 张重试候选图，按一张输入一张输出保留最终版。",
+            self._record("status", message.format(count=len(rejected)))
+        return kept
+
+    @staticmethod
+    def _requested_product_image_count(prompt):
+        match = re.search(
+            r"(?<!\d)(\d{1,2})\s*(?:(?:张|幅)(?:图片|图)?|images?\b)",
+            str(prompt or ""),
+            flags=re.IGNORECASE,
+        )
+        return max(1, min(int(match.group(1)), 12)) if match else 3
+
+    @staticmethod
+    def _numbered_output_slot(item):
+        match = re.match(r"^0*(\d{1,2})(?:[_-]|$)", Path(item.path).stem)
+        return int(match.group(1)) if match else None
+
+    def _enforce_output_contract(self, skill_name, image_paths, image_outputs, prompt=""):
+        if skill_name == "batch-clothing-white-bg-images" and image_paths:
+            expected = len(image_paths)
+            kept = image_outputs[-expected:]
+            return self._remove_rejected_images(
+                image_outputs,
+                kept,
+                "已移除 {count} 张重试候选图，按一张输入一张输出保留最终版。",
             )
-        return image_outputs[-expected:]
+
+        if skill_name != "batch-clothing-product-images":
+            return image_outputs
+
+        expected = self._requested_product_image_count(prompt)
+        if len(image_outputs) <= expected:
+            return image_outputs
+
+        # 复核重做仍使用 001/002/003 等槽位编号；后生成的同槽图片替换旧候选。
+        latest_by_slot = {}
+        for item in image_outputs:
+            slot = self._numbered_output_slot(item)
+            if slot is not None and 1 <= slot <= expected:
+                latest_by_slot[slot] = item
+        if all(slot in latest_by_slot for slot in range(1, expected + 1)):
+            kept = [latest_by_slot[slot] for slot in range(1, expected + 1)]
+        else:
+            kept = image_outputs[-expected:]
+
+        return self._remove_rejected_images(
+            image_outputs,
+            kept,
+            f"已替换 {{count}} 张复核淘汰图，批量服装主图最终保留 {expected} 张。",
+        )
 
     async def route(self, prompt, skill_override, image_paths, input_path=""):
         self._record("status", "正在分析任务、素材和 Skill 路由…")
@@ -493,7 +543,7 @@ Finish with a concise Chinese summary. Do not expose credentials or signed URL q
                 f"Skill {skill.name} 未生成任何图片产物，任务已终止，不会返回黑色占位图。"
             )
         image_outputs = self._enforce_output_contract(
-            skill.name, image_paths, image_outputs
+            skill.name, image_paths, image_outputs, prompt=prompt
         )
         self._record("completed", f"Skill 执行完成：{skill.name}", skill=skill.name)
         return str(result.final_output)
