@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -129,6 +130,10 @@ class NodeTests(unittest.TestCase):
                 "ComfyUI-LLM Agent SDK",
             },
         )
+        self.assertEqual(
+            package.NODE_DISPLAY_NAME_MAPPINGS["ComfyUI-LLM Agent SDK"],
+            "ComfyUI-LLM Agent Node",
+        )
 
     def test_agent_node_has_stable_contract(self):
         inputs = nodes.AgentSDKNode.INPUT_TYPES()
@@ -143,7 +148,7 @@ class NodeTests(unittest.TestCase):
         self.assertIn("批量AI换装", inputs["required"]["skill_override"][0])
         self.assertEqual(
             nodes.AgentSDKNode.RETURN_NAMES,
-            ("images", "text", "output_path", "artifacts_json", "state_json"),
+            ("images", "text"),
         )
 
     def test_only_vision_nodes_have_image_input(self):
@@ -208,12 +213,15 @@ class NodeTests(unittest.TestCase):
                         publish_to_oss=False,
                     )
                 )
-        images, text, output_path, artifacts, state = result
+            outputs_dir = next(Path(temp).rglob("outputs"))
+            artifact_data = json.loads((outputs_dir / "artifacts.json").read_text("utf-8"))
+            state_data = json.loads((outputs_dir / "state.json").read_text("utf-8"))
+        images, text = result
         self.assertEqual(text, "完成")
-        self.assertTrue(output_path.endswith("outputs"))
-        self.assertEqual(json.loads(artifacts)[0]["width"], 8)
-        self.assertEqual(json.loads(state)["status"], "completed")
-        self.assertEqual(json.loads(state)["delivery_mode"], "image")
+        self.assertEqual(artifact_data[0]["width"], 8)
+        self.assertNotIn("signed_url", artifact_data[0])
+        self.assertEqual(state_data["status"], "completed")
+        self.assertEqual(state_data["delivery_mode"], "image")
         self.assertEqual(tuple(images.shape), (1, 6, 8, 3))
 
     def test_agent_node_allows_text_only_skill_delivery(self):
@@ -245,10 +253,13 @@ class NodeTests(unittest.TestCase):
                         publish_to_oss=False,
                     )
                 )
-        images, text, _, artifacts, state = result
+            outputs_dir = next(Path(temp).rglob("outputs"))
+            artifact_data = json.loads((outputs_dir / "artifacts.json").read_text("utf-8"))
+            state_data = json.loads((outputs_dir / "state.json").read_text("utf-8"))
+        images, text = result
         self.assertEqual(text, "纯文字买手分析")
-        self.assertEqual(json.loads(artifacts), [])
-        self.assertEqual(json.loads(state)["delivery_mode"], "text")
+        self.assertEqual(artifact_data, [])
+        self.assertEqual(state_data["delivery_mode"], "text")
         self.assertEqual(tuple(images.shape), (1, 64, 64, 3))
 
 

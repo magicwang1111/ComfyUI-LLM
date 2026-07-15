@@ -11,7 +11,6 @@ from .artifact_store import (
     resolve_output_dir,
 )
 from .image_tools import (
-    artifact_json,
     mask_to_pil,
     records_to_preview,
     save_input_images,
@@ -194,8 +193,8 @@ class AgentSDKNode:
     OUTPUT_NODE = True
     CATEGORY = NODE_CATEGORY
     FUNCTION = "run_agent"
-    RETURN_TYPES = ("IMAGE", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("images", "text", "output_path", "artifacts_json", "state_json")
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("images", "text")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -298,8 +297,8 @@ class AgentSDKNode:
         publish_config = dict(config)
         publish_config["oss_enabled"] = bool(publish_to_oss and config.get("oss_enabled"))
         await publish_records(artifacts.records, artifacts.job_id, publish_config)
-        artifacts.write_manifest(route_data, status="completed")
         delivery_mode = "image" if artifacts.records else "text"
+        artifact_data = [record.disk_dict() for record in artifacts.records]
         result_state = {
             "job_id": artifacts.job_id,
             "job_dir": str(artifacts.job_dir),
@@ -307,14 +306,19 @@ class AgentSDKNode:
             "delivery_mode": delivery_mode,
             "route": route_data,
             "events": result.get("events", []),
-            "artifacts": [record.disk_dict() for record in artifacts.records],
+            "artifacts": artifact_data,
         }
+        (artifacts.outputs_dir / "artifacts.json").write_text(
+            json.dumps(artifact_data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (artifacts.outputs_dir / "state.json").write_text(
+            json.dumps(result_state, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
         return (
             records_to_preview(artifacts.records),
             result["text"],
-            str(artifacts.outputs_dir),
-            artifact_json(artifacts.records),
-            json.dumps(result_state, ensure_ascii=False, indent=2),
         )
 
 
@@ -327,3 +331,4 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {name: name for name in NODE_CLASS_MAPPINGS}
+NODE_DISPLAY_NAME_MAPPINGS[f"{NODE_PREFIX} Agent SDK"] = f"{NODE_PREFIX} Agent Node"
