@@ -171,7 +171,49 @@ class AgentRuntime:
         match = re.match(r"^0*(\d{1,2})(?:[_-]|$)", Path(item.path).stem)
         return int(match.group(1)) if match else None
 
+    @staticmethod
+    def _is_named_retry(item):
+        return bool(
+            re.search(
+                r"(?:^|[_\-\s])(?:重做|最终(?:版)?|final|retry|redo|revised|fixed|v\d+)(?:[_\-\s]|$)",
+                Path(item.path).stem,
+                flags=re.IGNORECASE,
+            )
+        )
+
+    def _replace_named_retries(self, image_outputs):
+        latest_by_slot = {}
+        retry_slots = set()
+        for item in image_outputs:
+            slot = self._numbered_output_slot(item)
+            if slot is None:
+                continue
+            if slot in latest_by_slot and self._is_named_retry(item):
+                retry_slots.add(slot)
+            latest_by_slot[slot] = item
+        if not retry_slots:
+            return image_outputs
+
+        kept = []
+        emitted_retry_slots = set()
+        for item in image_outputs:
+            slot = self._numbered_output_slot(item)
+            if slot not in retry_slots:
+                kept.append(item)
+            elif slot not in emitted_retry_slots:
+                kept.append(latest_by_slot[slot])
+                emitted_retry_slots.add(slot)
+        kept_slots = [self._numbered_output_slot(item) for item in kept]
+        if all(slot is not None for slot in kept_slots) and len(set(kept_slots)) == len(kept):
+            kept = [item for _, item in sorted(zip(kept_slots, kept), key=lambda pair: pair[0])]
+        return self._remove_rejected_images(
+            image_outputs,
+            kept,
+            "已用复核重做图替换 {count} 张同槽位旧图。",
+        )
+
     def _enforce_output_contract(self, skill_name, image_paths, image_outputs, prompt=""):
+        image_outputs = self._replace_named_retries(image_outputs)
         if skill_name == "batch-clothing-white-bg-images" and image_paths:
             expected = len(image_paths)
             kept = image_outputs[-expected:]
@@ -504,6 +546,7 @@ Original input files are numbered in the order returned by list_input_files.
 Use edit_images when visual references must be preserved and generate_image when there is no visual reference.
 When image artifacts are required, a final text response before an image tool has successfully returned is invalid.
 Inspect important generated images against the skill quality gate. Retry only when a concrete defect is found.
+For a retry, keep the original leading numeric slot and add `_重做` or `_final` to output_name so the old candidate is replaced.
 Use run_skill_script only for scripts explicitly shipped under this skill's scripts directory.
 Finish with a concise Chinese summary. Do not expose credentials or signed URL query parameters.
 </runtime_contract>

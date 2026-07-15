@@ -53,7 +53,16 @@ def resolve_output_dir(value, config):
     raw = str(value or "ComfyUI-LLM-Agent").strip()
     target = Path(raw).expanduser()
     if not target.is_absolute():
-        target = default_root / target
+        try:
+            import folder_paths
+
+            target = Path(
+                folder_paths.get_save_image_path(
+                    f"{raw}/__agent_output__", str(default_root)
+                )[0]
+            )
+        except (ImportError, AttributeError, TypeError):
+            target = default_root / target
     target = target.resolve()
     if not _is_within(target, roots):
         raise ValueError("output_dir must be inside ComfyUI output or allowed_output_roots.")
@@ -111,7 +120,7 @@ class ArtifactRecord:
 
 
 class LocalArtifactStore:
-    def __init__(self, output_root, job_id=None, job_dir=None):
+    def __init__(self, output_root, job_id=None, job_dir=None, flat_outputs=False):
         self.output_root = Path(output_root).resolve()
         self.job_id = str(job_id or uuid4().hex)
         date_path = datetime.now(timezone.utc).strftime("%Y/%m/%d")
@@ -121,9 +130,13 @@ class LocalArtifactStore:
                 raise ValueError("job_dir is outside output_dir.")
             self.job_dir = candidate
         else:
-            self.job_dir = self.output_root / date_path / self.job_id
+            self.job_dir = (
+                self.output_root / self.job_id
+                if flat_outputs
+                else self.output_root / date_path / self.job_id
+            )
         self.inputs_dir = self.job_dir / "inputs"
-        self.outputs_dir = self.job_dir / "outputs"
+        self.outputs_dir = self.job_dir if flat_outputs else self.job_dir / "outputs"
         self.inputs_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
         self.records = []

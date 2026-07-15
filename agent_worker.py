@@ -36,6 +36,7 @@ async def _run(job):
         job["output_root"],
         job_id=job["job_id"],
         job_dir=job["job_dir"],
+        flat_outputs=bool(job.get("flat_outputs")),
     )
     image_client = image_tools.VapeurImageClient(
         api_key=runtime_config["api_key"],

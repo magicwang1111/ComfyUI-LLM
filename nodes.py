@@ -251,7 +251,7 @@ class AgentSDKNode:
         config = load_config()
         runtime_config = resolve_runtime_config()
         root = resolve_output_dir(output_dir, config)
-        artifacts = LocalArtifactStore(root)
+        artifacts = LocalArtifactStore(root, flat_outputs=True)
         _send_agent_progress(unique_id, {"event": "reset", "message": "任务开始"})
 
         input_paths = save_input_images(images, artifacts.inputs_dir)
@@ -287,6 +287,7 @@ class AgentSDKNode:
                 "output_root": str(root),
                 "job_id": artifacts.job_id,
                 "job_dir": str(artifacts.job_dir),
+                "flat_outputs": True,
                 "script_python": sys.executable,
             },
             artifacts.job_dir,

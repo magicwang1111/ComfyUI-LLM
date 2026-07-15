@@ -33,7 +33,10 @@ through Vapeur's `/v1/responses` route. Its controlled tools can:
 
 The node exposes only an `IMAGE` preview batch and text summary. Full-resolution
 originals, `artifacts.json`, and `state.json` are saved together in the task's
-`outputs` folder. Persisted artifact data excludes OSS signed URLs.
+job folder. With Account Manager enabled, the layout is
+`output/YYYY-MM-DD/<username>/ComfyUI-LLM-Agent/<job_id>/`; otherwise it falls
+back to `output/ComfyUI-LLM-Agent/<job_id>/`. Persisted artifact data excludes
+OSS signed URLs.
 `skill_override=auto` is the normal mode; select a skill explicitly only to
 correct or debug routing.
 
@@ -87,8 +90,9 @@ generic `api_key` is accepted only when `api_provider` is explicitly
 relay `base_url` values are ignored.
 
 Relative `input_path` and `output_dir` values resolve inside ComfyUI's input
-and output roots. Absolute paths must be included in `allowed_input_roots` or
-`allowed_output_roots`.
+and output roots. The Agent node follows any account prefix applied through
+ComfyUI's standard save-path helper. Absolute paths must be included in
+`allowed_input_roots` or `allowed_output_roots`.
 
 To enable OSS publishing, set `oss_enabled`, bucket settings, and credentials in
 the ignored `config.local.json`:

@@ -47,6 +47,7 @@ class FakeAgentWorkerClient:
             job["output_root"],
             job_id=job["job_id"],
             job_dir=job["job_dir"],
+            flat_outputs=bool(job.get("flat_outputs")),
         )
         if on_event:
             on_event({"event": "status", "message": "test progress"})
@@ -213,13 +214,18 @@ class NodeTests(unittest.TestCase):
                         publish_to_oss=False,
                     )
                 )
-            outputs_dir = next(Path(temp).rglob("outputs"))
-            artifact_data = json.loads((outputs_dir / "artifacts.json").read_text("utf-8"))
-            state_data = json.loads((outputs_dir / "state.json").read_text("utf-8"))
+            artifacts_path = next(Path(temp).rglob("artifacts.json"))
+            state_path = artifacts_path.with_name("state.json")
+            artifact_data = json.loads(artifacts_path.read_text("utf-8"))
+            state_data = json.loads(state_path.read_text("utf-8"))
+            artifacts_share_output_dir = Path(artifact_data[0]["path"]).parent.samefile(
+                artifacts_path.parent
+            )
         images, text = result
         self.assertEqual(text, "完成")
         self.assertEqual(artifact_data[0]["width"], 8)
         self.assertNotIn("signed_url", artifact_data[0])
+        self.assertTrue(artifacts_share_output_dir)
         self.assertEqual(state_data["status"], "completed")
         self.assertEqual(state_data["delivery_mode"], "image")
         self.assertEqual(tuple(images.shape), (1, 6, 8, 3))
@@ -253,9 +259,10 @@ class NodeTests(unittest.TestCase):
                         publish_to_oss=False,
                     )
                 )
-            outputs_dir = next(Path(temp).rglob("outputs"))
-            artifact_data = json.loads((outputs_dir / "artifacts.json").read_text("utf-8"))
-            state_data = json.loads((outputs_dir / "state.json").read_text("utf-8"))
+            artifacts_path = next(Path(temp).rglob("artifacts.json"))
+            state_path = artifacts_path.with_name("state.json")
+            artifact_data = json.loads(artifacts_path.read_text("utf-8"))
+            state_data = json.loads(state_path.read_text("utf-8"))
         images, text = result
         self.assertEqual(text, "纯文字买手分析")
         self.assertEqual(artifact_data, [])

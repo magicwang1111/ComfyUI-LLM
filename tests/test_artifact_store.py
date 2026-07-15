@@ -1,4 +1,5 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -113,6 +114,28 @@ class ArtifactStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "outside"):
                 artifact_store.LocalArtifactStore(temp, job_dir=str(Path(temp).parent))
+
+    def test_account_manager_output_prefix_and_flat_job_layout(self):
+        with tempfile.TemporaryDirectory() as temp:
+            account_root = Path(temp) / "2026-07-15" / "wangxi" / "ComfyUI-LLM-Agent"
+            fake_folder_paths = SimpleNamespace(
+                get_output_directory=lambda: temp,
+                get_save_image_path=lambda *args: (
+                    str(account_root),
+                    "__agent_output__",
+                    1,
+                    "2026-07-15/wangxi/ComfyUI-LLM-Agent",
+                    args[0],
+                ),
+            )
+            with patch.dict(sys.modules, {"folder_paths": fake_folder_paths}):
+                root = artifact_store.resolve_output_dir("ComfyUI-LLM-Agent", {})
+            store = artifact_store.LocalArtifactStore(
+                root, job_id="test-job", flat_outputs=True
+            )
+        self.assertEqual(root, account_root.resolve())
+        self.assertEqual(store.job_dir, account_root.resolve() / "test-job")
+        self.assertEqual(store.outputs_dir, store.job_dir)
 
 
 if __name__ == "__main__":
