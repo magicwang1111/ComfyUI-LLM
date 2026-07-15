@@ -27,6 +27,11 @@ app.registerExtension({
                 inputPath.computeSize = () => [0, -4];
                 inputPath.draw = () => {};
             }
+            const publishToOss = this.widgets?.find((widget) => widget.name === "publish_to_oss");
+            if (publishToOss) {
+                publishToOss.computeSize = () => [0, -4];
+                publishToOss.draw = () => {};
+            }
 
             const log = document.createElement("textarea");
             log.readOnly = true;
