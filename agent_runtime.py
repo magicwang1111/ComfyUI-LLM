@@ -181,6 +181,23 @@ class AgentRuntime:
             )
         )
 
+    @staticmethod
+    def _world_buyer_product_slot(item):
+        match = re.search(
+            r"world[-_\s]*buyer[-_\s]*product[-_\s]*0*([1-5])(?:\D|$)",
+            Path(item.path).stem,
+            flags=re.IGNORECASE,
+        )
+        return int(match.group(1)) if match else None
+
+    @staticmethod
+    def _is_world_buyer_contact_sheet(item):
+        stem = Path(item.path).stem
+        return bool(
+            re.search(r"world[-_\s]*buyer.*contact[-_\s]*sheet", stem, re.IGNORECASE)
+            or "总览" in stem
+        )
+
     def _replace_named_retries(self, image_outputs):
         latest_by_slot = {}
         retry_slots = set()
@@ -232,6 +249,33 @@ class AgentRuntime:
 
     def _enforce_output_contract(self, skill_name, image_paths, image_outputs, prompt=""):
         image_outputs = self._replace_named_retries(image_outputs)
+        if skill_name == "world-buyer":
+            latest_by_slot = {}
+            contact_sheets = []
+            for item in image_outputs:
+                slot = self._world_buyer_product_slot(item)
+                if slot is not None:
+                    latest_by_slot[slot] = item
+                elif self._is_world_buyer_contact_sheet(item):
+                    contact_sheets.append(item)
+
+            missing_slots = [slot for slot in range(1, 6) if slot not in latest_by_slot]
+            if missing_slots or not contact_sheets:
+                missing = [f"product-{slot:02d}" for slot in missing_slots]
+                if not contact_sheets:
+                    missing.append("contact-sheet")
+                raise ValueError(
+                    "world-buyer 最终产物不完整，缺少：" + ", ".join(missing)
+                )
+
+            kept = [latest_by_slot[slot] for slot in range(1, 6)]
+            kept.append(contact_sheets[-1])
+            return self._remove_rejected_images(
+                image_outputs,
+                kept,
+                "已清理 {count} 张 world-buyer 候选图，最终保留 5 张产品卡和 1 张总览图。",
+            )
+
         if skill_name == "batch-clothing-white-bg-images" and image_paths:
             expected = len(image_paths)
             kept = image_outputs[-expected:]
