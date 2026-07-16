@@ -79,5 +79,15 @@ class OutputContractTests(unittest.TestCase):
                 )
 
 
+class ModelSettingsTests(unittest.TestCase):
+    def test_reasoning_summary_is_detailed(self):
+        runtime = agent_runtime.AgentRuntime.__new__(agent_runtime.AgentRuntime)
+        runtime.thinking_level = "high"
+
+        settings = runtime._settings()
+
+        self.assertEqual(settings.reasoning.summary, "detailed")
+
+
 if __name__ == "__main__":
     unittest.main()

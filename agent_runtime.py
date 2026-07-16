@@ -124,7 +124,7 @@ class AgentRuntime:
     def _settings(self, max_tokens=8192, tool_choice=None):
         return ModelSettings(
             max_tokens=max_tokens,
-            reasoning={"effort": self.thinking_level, "summary": "auto"},
+            reasoning={"effort": self.thinking_level, "summary": "detailed"},
             store=False,
             tool_choice=tool_choice,
         )
