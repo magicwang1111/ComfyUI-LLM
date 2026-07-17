@@ -27,6 +27,84 @@ class OutputContractTests(unittest.TestCase):
         path.write_bytes(filename.encode("utf-8"))
         return runtime.artifact_store.add(path, width=1, height=1)
 
+    def test_date_prefixed_retry_replaces_original_candidate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = self.runtime_with_store(temp)
+            look_03 = self.add_output(
+                runtime,
+                "20260717-0003_cobalt-puffer-feminine-city-look03_flatlay.png",
+            )
+            look_02 = self.add_output(
+                runtime,
+                "20260717-0002_cobalt-puffer-apres-ski-look02_flatlay.png",
+            )
+            rejected_look_01 = self.add_output(
+                runtime,
+                "20260717-0001_cobalt-puffer-urban-look01_flatlay.png",
+            )
+            final_look_01 = self.add_output(
+                runtime,
+                "20260717-0001_cobalt-puffer-urban-look01_flatlay_重做.png",
+            )
+
+            kept = runtime._enforce_output_contract(
+                "outfit-flatlay-stylist", [], list(runtime.artifact_store.records)
+            )
+
+            self.assertEqual(
+                [Path(item.path).name for item in kept],
+                [
+                    "20260717-0001_cobalt-puffer-urban-look01_flatlay_重做.png",
+                    "20260717-0002_cobalt-puffer-apres-ski-look02_flatlay.png",
+                    "20260717-0003_cobalt-puffer-feminine-city-look03_flatlay.png",
+                ],
+            )
+            self.assertEqual(runtime.artifact_store.records, kept)
+            self.assertFalse(Path(rejected_look_01.path).exists())
+            self.assertTrue(Path(final_look_01.path).exists())
+            self.assertTrue(Path(look_02.path).exists())
+            self.assertTrue(Path(look_03.path).exists())
+
+    def test_timestamp_named_retry_replaces_original_without_numeric_slot(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = self.runtime_with_store(temp)
+            rejected = self.add_output(
+                runtime, "20260717-1405_cobalt-puffer-flatlay.png"
+            )
+            final = self.add_output(
+                runtime, "20260717-1405_cobalt-puffer-flatlay_final.png"
+            )
+
+            kept = runtime._enforce_output_contract(
+                "outfit-flatlay-stylist", [], list(runtime.artifact_store.records)
+            )
+
+            self.assertEqual(
+                [Path(item.path).name for item in kept], [Path(final.path).name]
+            )
+            self.assertEqual(runtime.artifact_store.records, kept)
+            self.assertFalse(Path(rejected.path).exists())
+            self.assertTrue(Path(final.path).exists())
+
+    def test_numbered_slot_handles_date_prefix_without_using_time_as_slot(self):
+        self.assertEqual(
+            agent_runtime.AgentRuntime._numbered_output_slot(
+                SimpleNamespace(path="20260717-0001_cobalt-puffer-flatlay.png")
+            ),
+            1,
+        )
+        self.assertEqual(
+            agent_runtime.AgentRuntime._numbered_output_slot(
+                SimpleNamespace(path="20260717-1405-0001_cobalt-puffer-flatlay.png")
+            ),
+            1,
+        )
+        self.assertIsNone(
+            agent_runtime.AgentRuntime._numbered_output_slot(
+                SimpleNamespace(path="20260717-1405_cobalt-puffer-flatlay.png")
+            )
+        )
+
     def test_world_buyer_keeps_latest_five_cards_and_latest_contact_sheet(self):
         with tempfile.TemporaryDirectory() as temp:
             runtime = self.runtime_with_store(temp)
@@ -95,6 +173,19 @@ class ModelSettingsTests(unittest.TestCase):
 
 
 class InspectionProgressTests(unittest.TestCase):
+    def test_output_lookup_uses_exact_filename_not_completion_order(self):
+        records = [
+            SimpleNamespace(kind="output", path="01_first.png"),
+            SimpleNamespace(kind="output", path="03_third.png"),
+            SimpleNamespace(kind="output", path="02_second.png"),
+        ]
+
+        selected = agent_runtime.AgentRuntime._output_by_name(
+            records, "02_second.png"
+        )
+
+        self.assertEqual(selected.path, "02_second.png")
+
     def test_inspection_result_is_emitted_as_progress_event(self):
         with tempfile.TemporaryDirectory() as temp:
             runtime = agent_runtime.AgentRuntime.__new__(agent_runtime.AgentRuntime)

@@ -168,7 +168,10 @@ class AgentRuntime:
 
     @staticmethod
     def _numbered_output_slot(item):
-        match = re.match(r"^0*(\d{1,2})(?:[_-]|$)", Path(item.path).stem)
+        match = re.match(
+            r"^(?:\d{8}[-_](?:\d{4}[-_])?)?0*(\d{1,2})(?:[_-]|$)",
+            Path(item.path).stem,
+        )
         return int(match.group(1)) if match else None
 
     @staticmethod
@@ -180,6 +183,17 @@ class AgentRuntime:
                 flags=re.IGNORECASE,
             )
         )
+
+    @staticmethod
+    def _retry_base_stem(item):
+        stem = Path(item.path).stem
+        match = re.search(
+            r"(?:[_\-\s])(?:重做|最终(?:版)?|final|retry|redo|revised|fixed|v\d+)"
+            r"(?:[_-](?:\d+|v\d+))?$",
+            stem,
+            flags=re.IGNORECASE,
+        )
+        return stem[: match.start()].casefold() if match else None
 
     @staticmethod
     def _world_buyer_product_slot(item):
@@ -199,32 +213,59 @@ class AgentRuntime:
         )
 
     def _replace_named_retries(self, image_outputs):
+        original_outputs = list(image_outputs)
+        output_stems = {
+            Path(item.path).stem.casefold() for item in original_outputs
+        }
+        latest_by_base = {}
+        for item in original_outputs:
+            base = self._retry_base_stem(item)
+            if base in output_stems:
+                latest_by_base[base] = item
+
+        kept = []
+        emitted_bases = set()
+        for item in original_outputs:
+            stem = Path(item.path).stem.casefold()
+            retry_base = self._retry_base_stem(item)
+            base = stem if stem in latest_by_base else retry_base
+            if base not in latest_by_base:
+                kept.append(item)
+            elif base not in emitted_bases:
+                kept.append(latest_by_base[base])
+                emitted_bases.add(base)
+
         latest_by_slot = {}
         retry_slots = set()
-        for item in image_outputs:
+        for item in kept:
             slot = self._numbered_output_slot(item)
             if slot is None:
                 continue
             if slot in latest_by_slot and self._is_named_retry(item):
                 retry_slots.add(slot)
             latest_by_slot[slot] = item
-        if not retry_slots:
-            return image_outputs
+        if retry_slots:
+            slot_kept = []
+            emitted_retry_slots = set()
+            for item in kept:
+                slot = self._numbered_output_slot(item)
+                if slot not in retry_slots:
+                    slot_kept.append(item)
+                elif slot not in emitted_retry_slots:
+                    slot_kept.append(latest_by_slot[slot])
+                    emitted_retry_slots.add(slot)
+            kept = slot_kept
 
-        kept = []
-        emitted_retry_slots = set()
-        for item in image_outputs:
-            slot = self._numbered_output_slot(item)
-            if slot not in retry_slots:
-                kept.append(item)
-            elif slot not in emitted_retry_slots:
-                kept.append(latest_by_slot[slot])
-                emitted_retry_slots.add(slot)
+        if len(kept) == len(original_outputs) and all(
+            current is original for current, original in zip(kept, original_outputs)
+        ):
+            return original_outputs
+
         kept_slots = [self._numbered_output_slot(item) for item in kept]
         if all(slot is not None for slot in kept_slots) and len(set(kept_slots)) == len(kept):
             kept = [item for _, item in sorted(zip(kept_slots, kept), key=lambda pair: pair[0])]
         return self._remove_rejected_images(
-            image_outputs,
+            original_outputs,
             kept,
             "已用复核重做图替换 {count} 张同槽位旧图。",
         )
@@ -615,7 +656,7 @@ Use edit_images when visual references must be preserved and generate_image when
 When image artifacts are required, a final text response before an image tool has successfully returned is invalid.
 Inspect important generated images against the skill quality gate. Retry only when a concrete defect is found.
 Call inspect_generated_image with the exact output filename returned by generate_image or edit_images. Never infer an image from list position, numeric index, or tool completion order.
-For a retry, keep the original leading numeric slot and add `_重做` or `_final` to output_name so the old candidate is replaced.
+For a retry, preserve the original output_name stem and append `_重做` or `_final` so the old candidate is replaced, including when the filename starts with a date or timestamp.
 Use run_skill_script only for scripts explicitly shipped under this skill's scripts directory.
 Finish with a concise Chinese summary. Do not expose credentials or signed URL query parameters.
 </runtime_contract>
