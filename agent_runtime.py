@@ -502,13 +502,20 @@ class AgentRuntime:
                 max_output_tokens=2048,
                 store=False,
             )
+            inspection_result = str(response.output_text or "").strip()
+            runtime._record(
+                "inspection_result",
+                f"图片复核结果（{filename}）：\n{inspection_result}",
+                tool="inspect_generated_image",
+                image_name=filename,
+            )
             runtime._record(
                 "tool_end",
                 f"生成图片复核完成：{filename}",
                 tool="inspect_generated_image",
                 image_name=filename,
             )
-            return response.output_text
+            return inspection_result
 
         async def make_contact_sheet(image_indices: list[int], output_name: str) -> str:
             """Compose existing generated images into a deterministic contact sheet."""

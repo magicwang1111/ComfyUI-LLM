@@ -171,6 +171,7 @@ def _send_agent_progress(unique_id, event):
         "output_count",
         "size",
         "skill",
+        "image_name",
         "returncode",
     }
     payload = {key: value for key, value in event.items() if key in safe_keys}
