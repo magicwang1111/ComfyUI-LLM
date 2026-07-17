@@ -10,19 +10,32 @@ ROOT_DIR = Path(__file__).resolve().parent
 EVENT_PREFIX = "__COMFYUI_LLM_EVENT__"
 
 
+def _isolated_python_path(root=ROOT_DIR, platform_name=os.name):
+    if platform_name == "nt":
+        return root / ".agent_env" / "Scripts" / "python.exe"
+    return root / ".agent_env" / "bin" / "python"
+
+
+def _runtime_installer_path(root=ROOT_DIR, platform_name=os.name):
+    suffix = "ps1" if platform_name == "nt" else "sh"
+    return root / f"install_agent_runtime.{suffix}"
+
+
 class AgentWorkerClient:
     def __init__(self, config, timeout=600):
         configured = str(config.get("agent_python") or "").strip()
+        isolated = _isolated_python_path()
         self.python = Path(configured).expanduser() if configured else (
-            ROOT_DIR / ".agent_env" / "Scripts" / "python.exe"
+            isolated if isolated.is_file() else Path(sys.executable)
         )
         self.timeout = max(60, int(timeout))
 
     def validate(self):
         if not self.python.is_file():
             raise ValueError(
-                "Agent SDK isolated runtime is not installed. Run "
-                f"{ROOT_DIR / 'install_agent_runtime.ps1'} once."
+                f"Agent SDK runtime Python was not found at {self.python}. "
+                f"Run {_runtime_installer_path()} once or set agent_python "
+                "to a valid Python executable."
             )
 
     async def run(self, job, work_dir, on_event=None):
@@ -84,6 +97,12 @@ class AgentWorkerClient:
                 raise ValueError("Agent SDK worker exceeded the task timeout.")
             if process.returncode != 0:
                 detail = "\n".join(stderr_lines)[-2000:].strip()
+                if "No module named 'agents'" in detail:
+                    raise ValueError(
+                        f"Agent SDK is not installed for {self.python}. Run "
+                        f"{_runtime_installer_path()} once or install "
+                        "requirements-agent.txt into that Python environment."
+                    )
                 raise ValueError(f"Agent SDK worker failed ({process.returncode}): {detail}")
             if not result_path.is_file():
                 detail = "\n".join(stdout_lines)[-1000:].strip()

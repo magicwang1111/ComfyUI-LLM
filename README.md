@@ -59,9 +59,20 @@ python -m pip install -r requirements.txt
 .\install_agent_runtime.ps1
 ```
 
-The second command installs OpenAI Agents SDK in the isolated `.agent_env`
-runtime. This avoids changing Pydantic and PyJWT versions used by other ComfyUI
-custom nodes. Restart ComfyUI after installation.
+On Linux, use:
+
+```bash
+cd /mnt/ComfyUI/custom_nodes/ComfyUI-LLM
+python -m pip install -r requirements.txt
+bash ./install_agent_runtime.sh
+```
+
+The platform-specific installer installs OpenAI Agents SDK in the isolated
+`.agent_env` runtime. This avoids changing Pydantic and PyJWT versions used by
+other ComfyUI custom nodes. If `requirements-agent.txt` is already installed in
+the Python environment running ComfyUI, the Agent node uses that interpreter
+when `.agent_env` is absent. Set `agent_python` in `config.local.json` only when
+an explicit interpreter override is needed. Restart ComfyUI after installation.
 
 ## Configuration
 
