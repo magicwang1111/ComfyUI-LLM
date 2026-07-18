@@ -111,3 +111,5 @@ When identity is weak, strengthen face geometry and the matching-angle reference
 ## Delivery
 
 Use a descriptive Chinese filename when the task is Chinese. Never overwrite the base image unless explicitly requested. In the final response, show the result inline, link the saved output, state whether it was a one-pass result or revised, report final pixel dimensions, and summarize the final prompt.
+
+Deliver exactly one image: the normalized final image produced by `normalize_2k.py`. All pre-review generations and revision candidates are intermediate working files, not additional deliverables.

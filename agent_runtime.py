@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from openai import AsyncOpenAI
+from PIL import Image
 from pydantic import BaseModel, Field
 
 from agents import (
@@ -108,6 +109,7 @@ class AgentRuntime:
         self.script_python = str(script_python or sys.executable)
         self.events = []
         self.event_callback = event_callback
+        self.script_output_paths = set()
         self.client = AsyncOpenAI(
             api_key=api_key,
             base_url="https://api.vapeur.ai/v1",
@@ -293,6 +295,19 @@ class AgentRuntime:
         return outputs[0]
 
     def _enforce_output_contract(self, skill_name, image_paths, image_outputs, prompt=""):
+        if skill_name == "fashion-model-outfit-swap":
+            script_outputs = [
+                item
+                for item in image_outputs
+                if str(Path(item.path).resolve()) in getattr(self, "script_output_paths", set())
+            ]
+            kept = script_outputs[-1:] if script_outputs else image_outputs[-1:]
+            return self._remove_rejected_images(
+                image_outputs,
+                kept,
+                "已清理 {count} 张换装中间候选图，最终只保留 1 张终稿。",
+            )
+
         image_outputs = self._replace_named_retries(image_outputs)
         if skill_name == "world-buyer":
             latest_by_slot = {}
@@ -623,6 +638,32 @@ class AgentRuntime:
                 "stdout": stdout.decode("utf-8", errors="replace")[:10000],
                 "stderr": stderr.decode("utf-8", errors="replace")[:10000],
             }
+            if process.returncode == 0 and "--output" in arguments:
+                output_index = arguments.index("--output") + 1
+                if output_index < len(arguments):
+                    output_path = Path(arguments[output_index]).expanduser().resolve()
+                    if (
+                        output_path.is_file()
+                        and _is_within(output_path, [runtime.artifact_store.outputs_dir])
+                        and output_path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+                    ):
+                        with Image.open(output_path) as output_image:
+                            width, height = output_image.size
+                        existing = next(
+                            (
+                                item
+                                for item in runtime.artifact_store.records
+                                if Path(item.path).resolve() == output_path
+                            ),
+                            None,
+                        )
+                        record = existing or runtime.artifact_store.add(
+                            output_path,
+                            width=width,
+                            height=height,
+                        )
+                        runtime.script_output_paths.add(str(output_path))
+                        result["artifact"] = record.disk_dict()
             runtime._record(
                 "tool_end",
                 f"Skill 脚本执行完成：{script.name}",

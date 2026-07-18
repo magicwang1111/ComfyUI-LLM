@@ -1,4 +1,6 @@
 import asyncio
+import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -85,6 +87,33 @@ class OutputContractTests(unittest.TestCase):
             self.assertEqual(runtime.artifact_store.records, kept)
             self.assertFalse(Path(rejected.path).exists())
             self.assertTrue(Path(final.path).exists())
+
+    def test_fashion_swap_keeps_only_registered_script_output(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = self.runtime_with_store(temp)
+            candidates = [
+                self.add_output(runtime, name)
+                for name in (
+                    "换装.png",
+                    "换装_final.png",
+                    "换装_终稿.png",
+                    "换装_交付_final.png",
+                )
+            ]
+            normalized = self.add_output(runtime, "换装_最终2K.png")
+            runtime.script_output_paths = {str(Path(normalized.path).resolve())}
+
+            kept = runtime._enforce_output_contract(
+                "fashion-model-outfit-swap",
+                [],
+                list(runtime.artifact_store.records),
+            )
+
+            self.assertEqual(kept, [normalized])
+            self.assertEqual(runtime.artifact_store.records, [normalized])
+            for candidate in candidates:
+                self.assertFalse(Path(candidate.path).exists())
+            self.assertTrue(Path(normalized.path).exists())
 
     def test_numbered_slot_handles_date_prefix_without_using_time_as_slot(self):
         self.assertEqual(
@@ -229,6 +258,70 @@ class InspectionProgressTests(unittest.TestCase):
                 },
                 runtime.events,
             )
+
+    def test_skill_script_registers_normalized_output_as_artifact(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = agent_runtime.AgentRuntime.__new__(agent_runtime.AgentRuntime)
+            runtime.artifact_store = artifact_store.LocalArtifactStore(temp, flat_outputs=True)
+            runtime.allowed_paths = [Path(temp).resolve()]
+            runtime.script_python = sys.executable
+            runtime.script_output_paths = set()
+            runtime.events = []
+            runtime.event_callback = None
+
+            base_path = runtime.artifact_store.outputs_dir / "base.png"
+            input_path = runtime.artifact_store.outputs_dir / "candidate.png"
+            output_path = runtime.artifact_store.outputs_dir / "final-2k.png"
+            Image.new("RGB", (300, 500), "white").save(base_path)
+            Image.new("RGB", (600, 600), "blue").save(input_path)
+
+            skill_path = (
+                Path(__file__).resolve().parents[1]
+                / "skills"
+                / "fashion-model-outfit-swap"
+            )
+            tools = runtime._tools(SimpleNamespace(path=skill_path), [])
+            script_tool = next(tool for tool in tools if tool.name == "run_skill_script")
+            arguments = {
+                "script_name": "normalize_2k.py",
+                "arguments": [
+                    "--base",
+                    str(base_path),
+                    "--input",
+                    str(input_path),
+                    "--output",
+                    str(output_path),
+                ],
+            }
+            tool_arguments = json.dumps(arguments)
+
+            result = asyncio.run(
+                script_tool.on_invoke_tool(
+                    ToolContext(
+                        None,
+                        tool_name="run_skill_script",
+                        tool_call_id="test-call",
+                        tool_arguments=tool_arguments,
+                    ),
+                    tool_arguments,
+                )
+            )
+            result_data = json.loads(result)
+
+            self.assertEqual(result_data["returncode"], 0)
+            self.assertEqual(Path(result_data["artifact"]["path"]), output_path)
+            self.assertEqual(
+                (
+                    result_data["artifact"]["width"],
+                    result_data["artifact"]["height"],
+                ),
+                (1229, 2048),
+            )
+            self.assertEqual(
+                [Path(item.path) for item in runtime.artifact_store.records],
+                [output_path],
+            )
+            self.assertEqual(runtime.script_output_paths, {str(output_path.resolve())})
 
 
 if __name__ == "__main__":
