@@ -1,0 +1,4 @@
+interface:
+  display_name: "模特换装主图"
+  short_description: "基于底图、穿搭图和多角度模特参考生成一致性电商换装主图"
+  default_prompt: "使用 $fashion-model-outfit-swap，保留底图的姿势、构图和光影，将指定模特换上穿搭图中的完整服装。"

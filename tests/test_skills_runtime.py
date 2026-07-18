@@ -10,8 +10,9 @@ skills_runtime = import_module("skills_runtime")
 class SkillRegistryTests(unittest.TestCase):
     def test_discovers_all_current_skills(self):
         registry = skills_runtime.SkillRegistry()
-        self.assertEqual(len(registry.skills), 10)
+        self.assertEqual(len(registry.skills), 11)
         self.assertIn("batch-ai-tryon", registry.skills)
+        self.assertIn("fashion-model-outfit-swap", registry.skills)
         self.assertIn("world-buyer", registry.skills)
         self.assertEqual(registry.errors, [])
 
