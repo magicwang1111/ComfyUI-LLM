@@ -19,6 +19,8 @@ Input roles:
 
 Identity: Preserve the model's recognizable face, body proportions, skin tone, and hairstyle. Render the same person, not a similar-looking person. Match visible [face shape, eyes, nose, lips, and distinctive marks] to Images 3-5.
 
+Hairstyle identity: Preserve the model reference's [hair color], [short/medium/long length class], [loose/tied/updo construction], and [overall silhouette]. Do not turn short or tied-up hair into loose long hair, or make the reverse change. Allow natural differences in parting, flyaways, individual wisps, and volume caused by pose and scene.
+
 Pose and composition: Match Image 1: [torso direction], [head direction and gaze], [left/right arm and hand interaction], [leg and foot placement], [body scale and location], [background landmarks].
 
 Lighting and realism: Match Image 1's [source direction, softness, color temperature, rim light, facial fill, cast shadow]. Use natural skin texture, coherent contact shadows, realistic cloth folds, and editorial photography realism.

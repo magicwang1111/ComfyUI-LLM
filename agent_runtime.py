@@ -430,6 +430,8 @@ class AgentRuntime:
 
     def _tools(self, skill, input_paths):
         runtime = self
+        inspection_count = 0
+        inspection_limit = 1 if getattr(skill, "name", "") == "fashion-model-outfit-swap" else None
 
         async def list_input_files() -> str:
             """List the validated input image files available to this task."""
@@ -537,7 +539,13 @@ class AgentRuntime:
 
         async def inspect_generated_image(image_name: str, checklist: str) -> str:
             """Inspect one generated image by its exact filename returned by an image tool."""
+            nonlocal inspection_count
             output = runtime._output_by_name(runtime.artifact_store.records, image_name)
+            if inspection_limit is not None and inspection_count >= inspection_limit:
+                raise ValueError(
+                    "fashion-model-outfit-swap allows at most one image inspection per task."
+                )
+            inspection_count += 1
             filename = Path(output.path).name
             runtime._record(
                 "tool_start",

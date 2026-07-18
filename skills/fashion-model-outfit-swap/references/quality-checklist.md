@@ -12,7 +12,8 @@ Inspect the generated image at original detail. Approve only when no high-impact
 
 - Same recognizable adult model, not merely similar.
 - Face shape, eye spacing, nose, lips, skin tone, and distinctive marks agree with references.
-- Head angle and hairstyle remain plausible for the target pose.
+- Head angle remains plausible for the target pose.
+- Hair color, short/medium/long length class, loose/tied/updo construction, and overall silhouette remain close to the model reference. Short hair becoming long, long hair becoming short, or tied/up hair becoming loose long hair is a high-impact identity failure. Do not fail fine differences in hairline, parting, flyaways, individual wisps, or exact volume.
 
 ## Base-image preservation
 
@@ -50,4 +51,4 @@ Inspect the generated image at original detail. Approve only when no high-impact
 
 ## Revision decision
 
-Before approval, zoom in and explicitly verify the face, bag, and every listed accessory; do not infer their presence from the prompt. Revise only the highest-impact failed category. Treat face drift, a missing or wrong bag, missing paired earrings, incorrect jewelry colors or geometry, all bracelets collapsing onto one wrist, or identity-obscuring eyewear as required failures rather than harmless minor differences.
+Perform this checklist only once per task. Before approval, zoom in and explicitly verify the face, coarse hairstyle identity, bag, and every `confirmed` accessory; do not infer an accessory's category, count, or presence from the prompt. Treat face drift, a major hairstyle class change, a missing or wrong required bag, missing confirmed paired earrings, incorrect confirmed jewelry colors or geometry, all confirmed bracelets collapsing onto one wrist, or identity-obscuring eyewear as failures. Do not fail or regenerate for an `ambiguous` accessory, a fine hairstyle difference, a tiny detail that cannot be resolved at the available image size, or source fidelity that cannot be compared because the review lacks its original reference. Only a confirmed high-impact facial-identity, coarse-hairstyle, anatomy, main-garment, or required-bag defect may trigger one fresh regeneration; do not review the replacement.

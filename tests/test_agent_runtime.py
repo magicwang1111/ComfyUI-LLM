@@ -259,6 +259,65 @@ class InspectionProgressTests(unittest.TestCase):
                 runtime.events,
             )
 
+    def test_outfit_swap_allows_only_one_inspection_per_task(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = agent_runtime.AgentRuntime.__new__(agent_runtime.AgentRuntime)
+            runtime.artifact_store = artifact_store.LocalArtifactStore(temp, flat_outputs=True)
+            image_path = runtime.artifact_store.outputs_dir / "checked.png"
+            Image.new("RGB", (1, 1), "white").save(image_path)
+            runtime.artifact_store.add(image_path, width=1, height=1)
+            runtime.events = []
+            runtime.event_callback = None
+            runtime.agent_model = "test-model"
+
+            class Responses:
+                def __init__(self):
+                    self.calls = 0
+
+                async def create(self, **kwargs):
+                    self.calls += 1
+                    return SimpleNamespace(output_text="ok")
+
+            responses = Responses()
+            runtime.client = SimpleNamespace(responses=responses)
+            runtime._record = agent_runtime.AgentRuntime._record.__get__(runtime)
+            runtime._output_by_name = agent_runtime.AgentRuntime._output_by_name
+
+            skill = SimpleNamespace(
+                name="fashion-model-outfit-swap",
+                path=Path(temp),
+            )
+            tools = runtime._tools(skill, [])
+            inspect_tool = next(tool for tool in tools if tool.name == "inspect_generated_image")
+            arguments = '{"image_name":"checked.png","checklist":"check"}'
+
+            first = asyncio.run(
+                inspect_tool.on_invoke_tool(
+                    ToolContext(
+                        None,
+                        tool_name="inspect_generated_image",
+                        tool_call_id="first-call",
+                        tool_arguments=arguments,
+                    ),
+                    arguments,
+                )
+            )
+            self.assertEqual(first, "ok")
+
+            second = asyncio.run(
+                inspect_tool.on_invoke_tool(
+                    ToolContext(
+                        None,
+                        tool_name="inspect_generated_image",
+                        tool_call_id="second-call",
+                        tool_arguments=arguments,
+                    ),
+                    arguments,
+                )
+            )
+            self.assertIn("at most one image inspection", second)
+            self.assertEqual(responses.calls, 1)
+
     def test_skill_script_registers_normalized_output_as_artifact(self):
         with tempfile.TemporaryDirectory() as temp:
             runtime = agent_runtime.AgentRuntime.__new__(agent_runtime.AgentRuntime)

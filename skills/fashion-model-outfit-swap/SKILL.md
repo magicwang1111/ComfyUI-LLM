@@ -37,15 +37,15 @@ For an accessory-focused revision, replace the full-body model image with the us
 
 1. Inspect all inputs and assign roles.
 2. Read `references/prompt-template.md` and build one structured edit prompt.
-3. Extract the complete outfit inventory: garment type, color, neckline, sleeves, silhouette, length, waist details, fabric behavior, shoes, bag, jewelry, and other accessories. Record accessory count, pair/set membership, material, color, geometry, scale, and intended body location. For every bag, separately record quantity, silhouette, size, material, color, handles, shoulder or crossbody strap, closures, pockets, hardware, decorative details, and carry mode.
+3. Record the model's coarse hairstyle identity: hair color, short/medium/long length class, loose/tied/updo construction, and overall silhouette. Keep these traits; do not inventory or hard-lock hairline, parting, individual wisps, or exact bun volume. Then extract the complete outfit inventory: garment type, color, neckline, sleeves, silhouette, length, waist details, fabric behavior, shoes, bag, jewelry, and other accessories. Classify every accessory as `confirmed`, `ambiguous`, or `absent`. Include only `confirmed` accessories in required generation and review criteria; never guess an ambiguous object's category or count. Record confirmed accessory count, pair/set membership, material, color, geometry, scale, and intended body location. For every confirmed bag, separately record quantity, silhouette, size, material, color, handles, shoulder or crossbody strap, closures, pockets, hardware, decorative details, and carry mode.
 4. Separate controls explicitly:
    - base image controls pose, environment, composition, and lighting;
    - model images control identity, body proportions, skin tone, and hairstyle;
    - outfit image controls wardrobe and accessories only.
 5. Generate one high-quality first pass with the built-in image editing tool. Explicitly request the base image's aspect ratio and full-body framing.
-6. Inspect the result at original detail and apply `references/quality-checklist.md`.
+6. Inspect the first result at original detail and call `inspect_generated_image` at most once for the entire task, applying `references/quality-checklist.md`. Never inspect a revision again.
 7. If acceptable, run `scripts/normalize_2k.py --base <base-image> --input <generated-image> --output <final-image>` and copy the normalized result non-destructively into the task's user-facing output directory.
-8. If unacceptable, identify the single highest-impact defect and run one targeted revision. Repeat invariants in every revision. Do not rewrite unrelated details.
+8. If the single review finds a confirmed high-impact defect in facial identity, coarse hairstyle identity, anatomy, the main garment, or a required bag, allow at most one fresh regeneration from the original base image and the complete original reference set. Treat short hair becoming long, long hair becoming short, or loose/tied/updo construction changing as coarse hairstyle drift. Do not edit the rejected candidate, chain revisions, or review the replacement. Never regenerate for an ambiguous or unclear small accessory or a fine hairstyle difference. Otherwise keep the first result.
 
 ## Preservation hierarchy
 
@@ -99,6 +99,8 @@ Never let the outfit reference replace the model's face or let the base image's 
 Prioritize revision defects in this order: identity drift or face occlusion, anatomy/hands, missing or wrong bag, wrong garment, wrong pose, required accessory mismatch, lighting mismatch, background drift, optional minor detail. Change one category per revision prompt.
 
 When identity is weak, strengthen face geometry and the matching-angle reference; do not add more wardrobe prose. When clothing is weak, restate garment construction and negatives without altering identity instructions. When hands are weak, specify the exact hand-object interaction and preserve everything else.
+
+Treat review as a single safety gate, not an iterative polishing loop. A review that lacks the original source references cannot judge identity or source fidelity and must not trigger regeneration for those categories. Preserve coarse hairstyle identity from the model reference, but accept natural pose-driven differences in strands, parting, flyaways, and volume. Do not turn uncertain jewelry, tiny details, fine hairstyle differences, or limited-resolution visibility into required defects. Preserve the first candidate as the fallback whenever a permitted regeneration would risk degrading identity, garments, the bag, or confirmed accessories.
 
 ## Delivery
 
