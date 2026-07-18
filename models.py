@@ -11,6 +11,9 @@ MODEL_SPECS = {
     "gpt": {
         "default": "gpt-5.5",
         "models": {
+            "gpt-5.6-sol": {"max_tokens": 128000, "vision": True},
+            "gpt-5.6-terra": {"max_tokens": 128000, "vision": True},
+            "gpt-5.6-luna": {"max_tokens": 128000, "vision": True},
             "gpt-5.5": {"max_tokens": 128000, "vision": True},
             "gpt-5.4": {"max_tokens": 128000, "vision": True},
             "gpt-5.4-mini": {"max_tokens": 128000, "vision": True},

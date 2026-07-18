@@ -17,15 +17,23 @@ class PayloadTests(unittest.TestCase):
     def test_fixed_model_lists_and_defaults(self):
         self.assertEqual(
             models.model_names("gpt"),
-            ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
+            [
+                "gpt-5.6-sol",
+                "gpt-5.6-terra",
+                "gpt-5.6-luna",
+                "gpt-5.5",
+                "gpt-5.4",
+                "gpt-5.4-mini",
+            ],
         )
+        self.assertEqual(models.default_model("gpt"), "gpt-5.5")
         self.assertEqual(models.default_model("claude"), "claude-sonnet-5")
         self.assertEqual(models.default_model("gemini"), "gemini-3.5-flash")
         self.assertEqual(models.default_model("deepseek"), "deepseek-v4-flash-cn")
 
     def test_gpt_payload_uses_chat_vision_and_max_output(self):
         payload = llm.build_gpt_payload(
-            "gpt-5.5", "high", "system", "rewrite", "abc"
+            "gpt-5.6-sol", "high", "system", "rewrite", "abc"
         )
         self.assertEqual(payload["max_completion_tokens"], 128000)
         self.assertEqual(payload["reasoning_effort"], "high")
