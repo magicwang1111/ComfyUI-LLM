@@ -2,6 +2,11 @@ import json
 import sys
 from pathlib import Path
 
+try:
+    from comfy_api.latest import io
+except ImportError:  # Allows the lightweight unit-test runtime outside ComfyUI.
+    io = None
+
 from .agent_worker_client import AgentWorkerClient
 from .artifact_store import (
     ArtifactRecord,
@@ -190,47 +195,103 @@ def _send_agent_progress(unique_id, event):
         pass
 
 
-class AgentSDKNode:
-    OUTPUT_NODE = True
-    CATEGORY = NODE_CATEGORY
-    FUNCTION = "run_agent"
-    RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("images", "text")
+_AgentNodeBase = io.ComfyNode if io is not None else object
 
-    @classmethod
-    def INPUT_TYPES(cls):
-        registry = SkillRegistry()
-        skill_options = [SKILL_LABELS.get(name, name) for name in ["auto", *registry.names()]]
-        return {
-            "required": {
-                "prompt": ("STRING", {"multiline": True, "default": ""}),
-                "agent_model": (
-                    model_names("gpt"),
-                    {"default": default_model("gpt")},
-                ),
-                "skill_override": (skill_options, {"default": SKILL_LABELS["auto"]}),
-                "image_model": (AGENT_IMAGE_MODELS, {"default": "gpt-image-2"}),
-                "thinking_level": (
-                    [item for item in THINKING_LEVELS if item != "off"],
-                    {"default": DEFAULT_THINKING_LEVEL},
-                ),
-                "output_dir": (
-                    "STRING",
-                    {"default": "ComfyUI-LLM-Agent"},
-                ),
-                "max_agent_turns": (
-                    "INT",
-                    {"default": 12, "min": 1, "max": 50, "step": 1},
-                ),
-                "publish_to_oss": ("BOOLEAN", {"default": True}),
-            },
-            "optional": {
-                "images": ("IMAGE",),
-                "mask": ("MASK",),
-                "input_path": ("STRING", {"default": ""}),
-            },
-            "hidden": {"unique_id": "UNIQUE_ID"},
-        }
+
+class AgentSDKNode(_AgentNodeBase):
+    if io is not None:
+        @classmethod
+        def define_schema(cls):
+            registry = SkillRegistry()
+            skill_options = [SKILL_LABELS.get(name, name) for name in ["auto", *registry.names()]]
+            image_template = io.Autogrow.TemplatePrefix(
+                io.Image.Input("image"),
+                prefix="image",
+                min=1,
+                max=16,
+            )
+            return io.Schema(
+                node_id=f"{NODE_PREFIX} Agent SDK",
+                display_name=f"{NODE_PREFIX} Agent Node",
+                category=NODE_CATEGORY,
+                inputs=[
+                    io.String.Input("prompt", multiline=True, default=""),
+                    io.Combo.Input(
+                        "agent_model",
+                        options=model_names("gpt"),
+                        default=default_model("gpt"),
+                    ),
+                    io.Combo.Input(
+                        "skill_override",
+                        options=skill_options,
+                        default=SKILL_LABELS["auto"],
+                    ),
+                    io.Combo.Input("image_model", options=AGENT_IMAGE_MODELS, default="gpt-image-2"),
+                    io.Combo.Input(
+                        "thinking_level",
+                        options=[item for item in THINKING_LEVELS if item != "off"],
+                        default=DEFAULT_THINKING_LEVEL,
+                    ),
+                    io.String.Input("output_dir", default="ComfyUI-LLM-Agent"),
+                    io.Int.Input("max_agent_turns", default=12, min=1, max=50, step=1),
+                    io.Boolean.Input("publish_to_oss", default=True),
+                    io.Autogrow.Input("reference_images", template=image_template, optional=True),
+                    io.Image.Input(
+                        "images",
+                        optional=True,
+                        display_name="images（旧 Batch 兼容）",
+                        tooltip="兼容旧工作流；新工作流请使用 image0、image1… 动态输入。",
+                    ),
+                    io.Mask.Input("mask", optional=True),
+                    io.String.Input("input_path", default="", optional=True),
+                ],
+                outputs=[
+                    io.Image.Output(display_name="images"),
+                    io.String.Output(display_name="text"),
+                ],
+                hidden=[io.Hidden.unique_id],
+                is_output_node=True,
+            )
+
+        @classmethod
+        async def execute(cls, **kwargs):
+            images, text = await cls().run_agent(
+                **kwargs,
+                unique_id=cls.hidden.unique_id,
+            )
+            return io.NodeOutput(images, text)
+    else:
+        OUTPUT_NODE = True
+        CATEGORY = NODE_CATEGORY
+        FUNCTION = "run_agent"
+        RETURN_TYPES = ("IMAGE", "STRING")
+        RETURN_NAMES = ("images", "text")
+
+        @classmethod
+        def INPUT_TYPES(cls):
+            registry = SkillRegistry()
+            skill_options = [SKILL_LABELS.get(name, name) for name in ["auto", *registry.names()]]
+            return {
+                "required": {
+                    "prompt": ("STRING", {"multiline": True, "default": ""}),
+                    "agent_model": (model_names("gpt"), {"default": default_model("gpt")}),
+                    "skill_override": (skill_options, {"default": SKILL_LABELS["auto"]}),
+                    "image_model": (AGENT_IMAGE_MODELS, {"default": "gpt-image-2"}),
+                    "thinking_level": (
+                        [item for item in THINKING_LEVELS if item != "off"],
+                        {"default": DEFAULT_THINKING_LEVEL},
+                    ),
+                    "output_dir": ("STRING", {"default": "ComfyUI-LLM-Agent"}),
+                    "max_agent_turns": ("INT", {"default": 12, "min": 1, "max": 50, "step": 1}),
+                    "publish_to_oss": ("BOOLEAN", {"default": True}),
+                },
+                "optional": {
+                    "images": ("IMAGE",),
+                    "mask": ("MASK",),
+                    "input_path": ("STRING", {"default": ""}),
+                },
+                "hidden": {"unique_id": "UNIQUE_ID"},
+            }
 
     async def run_agent(
         self,
@@ -242,6 +303,7 @@ class AgentSDKNode:
         output_dir,
         max_agent_turns,
         publish_to_oss,
+        reference_images=None,
         images=None,
         mask=None,
         input_path="",
@@ -255,14 +317,40 @@ class AgentSDKNode:
         artifacts = LocalArtifactStore(root, flat_outputs=True)
         _send_agent_progress(unique_id, {"event": "reset", "message": "任务开始"})
 
-        input_paths = save_input_images(images, artifacts.inputs_dir)
+        dynamic_items = list((reference_images or {}).items())
+        dynamic_items.sort(
+            key=lambda item: (
+                int(item[0][5:])
+                if item[0].startswith("image") and item[0][5:].isdigit()
+                else 999
+            )
+        )
+        dynamic_images = [value for _, value in dynamic_items]
+        input_paths = []
+        for dynamic_image in dynamic_images:
+            input_paths.extend(
+                save_input_images(
+                    dynamic_image,
+                    artifacts.inputs_dir,
+                    start_index=len(input_paths) + 1,
+                )
+            )
+        size_reference_path = input_paths[0] if input_paths else None
+        input_paths.extend(
+            save_input_images(
+                images,
+                artifacts.inputs_dir,
+                start_index=len(input_paths) + 1,
+            )
+        )
         resolved_input = resolve_input_path(input_path, config)
         if resolved_input:
             input_paths.extend(scan_images(resolved_input))
         input_paths = list(dict.fromkeys(Path(path).resolve() for path in input_paths))
 
         mask_path = None
-        batch = tensor_to_pil_batch(images)
+        mask_reference = dynamic_images[0] if dynamic_images else images
+        batch = tensor_to_pil_batch(mask_reference)
         if mask is not None and batch:
             mask_image = mask_to_pil(mask, batch[0].size)
             mask_path = artifacts.inputs_dir / "comfyui_mask.png"
@@ -282,6 +370,7 @@ class AgentSDKNode:
                 "thinking_level": thinking_level,
                 "max_agent_turns": max_agent_turns,
                 "input_paths": [str(path) for path in input_paths],
+                "size_reference_path": str(size_reference_path or ""),
                 "input_path": str(resolved_input or ""),
                 "mask_path": str(mask_path) if mask_path else "",
                 "allowed_paths": [str(path) for path in allowed_paths],

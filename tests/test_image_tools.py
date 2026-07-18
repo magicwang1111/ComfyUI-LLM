@@ -140,6 +140,32 @@ class ImageToolTests(unittest.TestCase):
             result = asyncio.run(run())
         self.assertEqual(len(result), 1)
 
+    def test_auto_edit_size_uses_dynamic_image_zero_as_reference(self):
+        async def handler(request):
+            self.assertEqual(request.url.params["size"], "1536x2736")
+            return httpx.Response(200, json={"data": [{"b64_json": encoded_png()}]})
+
+        with tempfile.TemporaryDirectory() as temp:
+            selected_input = Path(temp) / "selected.png"
+            image_zero = Path(temp) / "image0.png"
+            Image.new("RGB", (880, 1176), "white").save(selected_input)
+            Image.new("RGB", (941, 1672), "white").save(image_zero)
+
+            async def run():
+                client = image_tools.VapeurImageClient("key", transport=httpx.MockTransport(handler))
+                try:
+                    return await client.edit(
+                        "edit",
+                        [selected_input],
+                        size="auto",
+                        size_reference=image_zero,
+                    )
+                finally:
+                    await client.close()
+
+            result = asyncio.run(run())
+        self.assertEqual(len(result), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

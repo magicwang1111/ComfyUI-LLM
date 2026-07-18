@@ -89,6 +89,7 @@ class AgentRuntime:
         timeout=600,
         allowed_paths=None,
         mask_path=None,
+        size_reference_path=None,
         script_python=None,
         event_callback=None,
     ):
@@ -101,6 +102,9 @@ class AgentRuntime:
         self.max_turns = max(1, min(int(max_turns), 50))
         self.allowed_paths = [Path(item).resolve() for item in (allowed_paths or [])]
         self.mask_path = Path(mask_path).resolve() if mask_path else None
+        self.size_reference_path = (
+            Path(size_reference_path).resolve() if size_reference_path else None
+        )
         self.script_python = str(script_python or sys.executable)
         self.events = []
         self.event_callback = event_callback
@@ -504,6 +508,7 @@ class AgentRuntime:
                 n=n,
                 size=size,
                 mask=runtime.mask_path,
+                size_reference=getattr(runtime, "size_reference_path", None),
             )
             records = save_generated_images(images, runtime.artifact_store, output_name)
             runtime._record(
@@ -653,7 +658,7 @@ Delivery mode: {"text only" if text_only else "image artifacts required"}
 Use the provided function tools to produce the actual deliverables; never claim an image or file exists unless a tool returned it.
 Original input files are numbered in the order returned by list_input_files.
 Use edit_images when visual references must be preserved and generate_image when there is no visual reference.
-For edit_images, pass size="auto" by default. It preserves the first selected input image's aspect ratio while targeting the same total pixels as 2048x2048. Pass an explicit WIDTHxHEIGHT only when the user explicitly requests that output size or aspect ratio.
+For edit_images, pass size="auto" by default. It preserves dynamic image0's aspect ratio when available, otherwise the first selected input image's ratio, while targeting the same total pixels as 2048x2048. Pass an explicit WIDTHxHEIGHT only when the user explicitly requests that output size or aspect ratio.
 When image artifacts are required, a final text response before an image tool has successfully returned is invalid.
 Inspect important generated images against the skill quality gate. Retry only when a concrete defect is found.
 Call inspect_generated_image with the exact output filename returned by generate_image or edit_images. Never infer an image from list position, numeric index, or tool completion order.

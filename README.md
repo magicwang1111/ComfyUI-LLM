@@ -40,6 +40,13 @@ OSS signed URLs.
 `skill_override=auto` is the normal mode; select a skill explicitly only to
 correct or debug routing.
 
+The Agent node provides auto-growing `image0`, `image1`, ... inputs (up to 16).
+Connect the edit base image to `image0`; it remains the authoritative aspect
+ratio for `size=auto`. Each socket is saved independently, so references keep
+their original dimensions instead of being resized into a ComfyUI image batch.
+The separate `images` socket remains available only for existing batch-based
+workflows.
+
 The node UI streams Skill routing, model status, reasoning summaries returned by
 the Responses API, exact image prompts, tool start/completion, image review, and
 errors. The same sanitized progress is printed to the ComfyUI terminal. It does

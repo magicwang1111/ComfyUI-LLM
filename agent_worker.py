@@ -56,6 +56,7 @@ async def _run(job):
         timeout=runtime_config["timeout"],
         allowed_paths=job.get("allowed_paths", []),
         mask_path=job.get("mask_path"),
+        size_reference_path=job.get("size_reference_path"),
         script_python=job.get("script_python"),
         event_callback=_emit,
     )

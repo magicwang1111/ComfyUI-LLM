@@ -114,11 +114,11 @@ def mask_to_pil(mask, size):
     return Image.fromarray(alpha, "L").resize(size, Image.Resampling.LANCZOS)
 
 
-def save_input_images(images, target_dir):
+def save_input_images(images, target_dir, start_index=1):
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     paths = []
-    for index, image in enumerate(tensor_to_pil_batch(images), 1):
+    for index, image in enumerate(tensor_to_pil_batch(images), int(start_index)):
         path = target_dir / f"comfyui_input_{index:03d}.png"
         image.convert("RGB").save(path, format="PNG")
         paths.append(path.resolve())
@@ -222,7 +222,16 @@ class VapeurImageClient:
         response = await self._request("POST", "/v1/images/generations", json=payload)
         return await self._materialize(response.json())
 
-    async def edit(self, prompt, image_paths, model=DEFAULT_IMAGE_MODEL, n=1, size="auto", mask=None):
+    async def edit(
+        self,
+        prompt,
+        image_paths,
+        model=DEFAULT_IMAGE_MODEL,
+        n=1,
+        size="auto",
+        mask=None,
+        size_reference=None,
+    ):
         paths = [Path(path).resolve() for path in image_paths]
         if not paths:
             raise ValueError("Image editing requires at least one input image.")
@@ -231,7 +240,7 @@ class VapeurImageClient:
         if sum(path.stat().st_size for path in paths) > 25 * 1024 * 1024:
             raise ValueError("Image editing input files must total no more than 25 MB.")
         size = (
-            automatic_edit_size(paths[0], model=model)
+            automatic_edit_size(size_reference or paths[0], model=model)
             if str(size or "").strip().lower() == "auto"
             else validate_image_size(model, size)
         )

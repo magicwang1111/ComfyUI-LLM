@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import numpy as np
 from PIL import Image
 
 from _loader import ensure_package_loaded, import_module
@@ -93,6 +94,14 @@ class FakeTextAgentWorkerClient:
         }
 
 
+class CapturingAgentWorkerClient(FakeAgentWorkerClient):
+    last_job = None
+
+    async def run(self, job, work_dir, on_event=None):
+        type(self).last_job = job
+        return await super().run(job, work_dir, on_event=on_event)
+
+
 class NodeTests(unittest.TestCase):
     def test_progress_events_are_sent_and_sensitive_details_are_filtered(self):
         sent = []
@@ -141,14 +150,24 @@ class NodeTests(unittest.TestCase):
         self.assertIn("prompt", inputs["required"])
         self.assertIn("skill_override", inputs["required"])
         self.assertIn("images", inputs["optional"])
+        if nodes.io is not None:
+            self.assertIn("reference_images", inputs["optional"])
         self.assertNotIn("resume_state", inputs["optional"])
-        self.assertEqual(inputs["hidden"]["unique_id"], "UNIQUE_ID")
-        self.assertEqual(inputs["required"]["image_model"][0], ["gpt-image-2"])
+        self.assertIn(inputs["hidden"]["unique_id"], {"UNIQUE_ID", ("UNIQUE_ID",)})
+        image_model_input = inputs["required"]["image_model"]
+        image_model_options = (
+            image_model_input[1]["options"]
+            if image_model_input[0] == "COMBO"
+            else image_model_input[0]
+        )
+        self.assertEqual(image_model_options, ["gpt-image-2"])
         self.assertTrue(inputs["required"]["publish_to_oss"][1]["default"])
-        self.assertEqual(inputs["required"]["skill_override"][0][0], "自动选择")
-        self.assertIn("批量AI换装", inputs["required"]["skill_override"][0])
+        skill_input = inputs["required"]["skill_override"]
+        skill_options = skill_input[1]["options"] if skill_input[0] == "COMBO" else skill_input[0]
+        self.assertEqual(skill_options[0], "自动选择")
+        self.assertIn("批量AI换装", skill_options)
         self.assertEqual(
-            nodes.AgentSDKNode.RETURN_NAMES,
+            tuple(nodes.AgentSDKNode.RETURN_NAMES),
             ("images", "text"),
         )
 
@@ -229,6 +248,46 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(state_data["status"], "completed")
         self.assertEqual(state_data["delivery_mode"], "image")
         self.assertEqual(tuple(images.shape), (1, 6, 8, 3))
+
+    def test_dynamic_inputs_preserve_dimensions_and_image_zero_sets_size_reference(self):
+        with tempfile.TemporaryDirectory() as temp:
+            config = {"allowed_output_roots": [temp], "oss_enabled": False}
+            image_zero = np.zeros((1, 16, 9, 3), dtype=np.float32)
+            image_one = np.zeros((1, 8, 12, 3), dtype=np.float32)
+            with (
+                patch.object(nodes, "load_config", return_value=config),
+                patch.object(
+                    nodes,
+                    "resolve_runtime_config",
+                    return_value={
+                        "api_key": "test",
+                        "timeout": 10,
+                        "max_retries": 0,
+                        "retry_delay": 0,
+                    },
+                ),
+                patch.object(nodes, "AgentWorkerClient", CapturingAgentWorkerClient),
+            ):
+                asyncio.run(
+                    nodes.AgentSDKNode().run_agent(
+                        prompt="test",
+                        agent_model="gpt-5.5",
+                        skill_override="auto",
+                        image_model="gpt-image-2",
+                        thinking_level="medium",
+                        output_dir=temp,
+                        max_agent_turns=12,
+                        publish_to_oss=False,
+                        reference_images={"image1": image_one, "image0": image_zero},
+                    )
+                )
+            job = CapturingAgentWorkerClient.last_job
+            saved_paths = [Path(item) for item in job["input_paths"]]
+            with Image.open(saved_paths[0]) as first, Image.open(saved_paths[1]) as second:
+                saved_sizes = (first.size, second.size)
+
+        self.assertEqual(saved_sizes, ((9, 16), (12, 8)))
+        self.assertEqual(job["size_reference_path"], str(saved_paths[0]))
 
     def test_agent_node_allows_text_only_skill_delivery(self):
         with tempfile.TemporaryDirectory() as temp:
