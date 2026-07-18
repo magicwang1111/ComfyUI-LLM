@@ -68,7 +68,7 @@ class ImageToolTests(unittest.TestCase):
             self.assertEqual(request.url.path, "/v1/images/edits")
             self.assertIn("multipart/form-data", request.headers["content-type"])
             self.assertEqual(request.url.params["model"], "gpt-image-2")
-            self.assertEqual(request.url.params["size"], "1024x1024")
+            self.assertEqual(request.url.params["size"], "2048x2048")
             return httpx.Response(200, json={"data": [{"b64_json": encoded_png("blue")}]})
 
         with tempfile.TemporaryDirectory() as temp:
@@ -104,6 +104,41 @@ class ImageToolTests(unittest.TestCase):
         self.assertEqual(image_tools.validate_image_size("gpt-image-2", "2048x1536"), "2048x1536")
         with self.assertRaisesRegex(ValueError, "divisible by 16"):
             image_tools.validate_image_size("gpt-image-2", "1000x1000")
+
+    def test_auto_edit_size_preserves_ratio_at_2048_square_pixel_budget(self):
+        with tempfile.TemporaryDirectory() as temp:
+            landscape = Path(temp) / "landscape.png"
+            portrait = Path(temp) / "portrait.png"
+            Image.new("RGB", (4000, 3000), "white").save(landscape)
+            Image.new("RGB", (900, 1600), "white").save(portrait)
+
+            self.assertEqual(
+                image_tools.automatic_edit_size(landscape, "gpt-image-2"),
+                "2368x1776",
+            )
+            self.assertEqual(
+                image_tools.automatic_edit_size(portrait, "gpt-image-2"),
+                "1536x2736",
+            )
+
+    def test_explicit_edit_size_is_not_overridden(self):
+        async def handler(request):
+            self.assertEqual(request.url.params["size"], "2048x1536")
+            return httpx.Response(200, json={"data": [{"b64_json": encoded_png()}]})
+
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "input.png"
+            Image.new("RGB", (1600, 900), "white").save(path)
+
+            async def run():
+                client = image_tools.VapeurImageClient("key", transport=httpx.MockTransport(handler))
+                try:
+                    return await client.edit("edit", [path], size="2048x1536")
+                finally:
+                    await client.close()
+
+            result = asyncio.run(run())
+        self.assertEqual(len(result), 1)
 
 
 if __name__ == "__main__":

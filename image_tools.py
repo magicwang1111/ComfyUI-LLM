@@ -2,6 +2,7 @@ import asyncio
 import base64
 import io
 import json
+import math
 from pathlib import Path
 
 import httpx
@@ -11,6 +12,30 @@ from PIL import Image, ImageOps
 
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 DEFAULT_IMAGE_MODEL = "gpt-image-2"
+DEFAULT_IMAGE_PIXEL_BUDGET = 2048 * 2048
+
+
+def image_size_for_pixel_budget(width, height, pixel_budget=DEFAULT_IMAGE_PIXEL_BUDGET):
+    """Preserve an image ratio while targeting a total pixel budget."""
+    width = int(width)
+    height = int(height)
+    if width <= 0 or height <= 0:
+        raise ValueError("source image dimensions must be positive.")
+    ratio = width / height
+    # gpt-image-2 accepts aspect ratios up to 3:1.
+    ratio = min(3.0, max(1.0 / 3.0, ratio))
+    target_width = math.sqrt(int(pixel_budget) * ratio)
+    target_height = math.sqrt(int(pixel_budget) / ratio)
+    output_width = max(16, int(round(target_width / 16.0)) * 16)
+    output_height = max(16, int(round(target_height / 16.0)) * 16)
+    return output_width, output_height
+
+
+def automatic_edit_size(image_path, model=DEFAULT_IMAGE_MODEL):
+    with Image.open(image_path) as image:
+        width, height = image.size
+    output_width, output_height = image_size_for_pixel_budget(width, height)
+    return validate_image_size(model, f"{output_width}x{output_height}")
 
 
 def validate_image_size(model, size):
@@ -197,7 +222,7 @@ class VapeurImageClient:
         response = await self._request("POST", "/v1/images/generations", json=payload)
         return await self._materialize(response.json())
 
-    async def edit(self, prompt, image_paths, model=DEFAULT_IMAGE_MODEL, n=1, size="1024x1024", mask=None):
+    async def edit(self, prompt, image_paths, model=DEFAULT_IMAGE_MODEL, n=1, size="auto", mask=None):
         paths = [Path(path).resolve() for path in image_paths]
         if not paths:
             raise ValueError("Image editing requires at least one input image.")
@@ -205,7 +230,11 @@ class VapeurImageClient:
             raise ValueError("Image editing supports at most 16 input images per request.")
         if sum(path.stat().st_size for path in paths) > 25 * 1024 * 1024:
             raise ValueError("Image editing input files must total no more than 25 MB.")
-        size = validate_image_size(model, size)
+        size = (
+            automatic_edit_size(paths[0], model=model)
+            if str(size or "").strip().lower() == "auto"
+            else validate_image_size(model, size)
+        )
         files = []
         handles = []
         try:

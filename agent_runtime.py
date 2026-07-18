@@ -476,7 +476,7 @@ class AgentRuntime:
             size: str,
             output_name: str,
         ) -> str:
-            """Edit selected input images. Pass an empty image_indices list to use all inputs."""
+            """Edit selected inputs. Use size='auto' to preserve the first selected image ratio at a 2048x2048 total pixel budget; use WIDTHxHEIGHT only when explicitly requested."""
             selected = input_paths
             if image_indices:
                 selected = []
@@ -653,6 +653,7 @@ Delivery mode: {"text only" if text_only else "image artifacts required"}
 Use the provided function tools to produce the actual deliverables; never claim an image or file exists unless a tool returned it.
 Original input files are numbered in the order returned by list_input_files.
 Use edit_images when visual references must be preserved and generate_image when there is no visual reference.
+For edit_images, pass size="auto" by default. It preserves the first selected input image's aspect ratio while targeting the same total pixels as 2048x2048. Pass an explicit WIDTHxHEIGHT only when the user explicitly requests that output size or aspect ratio.
 When image artifacts are required, a final text response before an image tool has successfully returned is invalid.
 Inspect important generated images against the skill quality gate. Retry only when a concrete defect is found.
 Call inspect_generated_image with the exact output filename returned by generate_image or edit_images. Never infer an image from list position, numeric index, or tool completion order.
