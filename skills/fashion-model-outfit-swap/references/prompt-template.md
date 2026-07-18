@@ -17,9 +17,7 @@ Input roles:
 - Image 4: model frontal close-up for facial identity.
 - Image 5: model [angle] close-up matching the target head direction.
 
-Identity: Preserve the model's recognizable [face shape, eyes, nose, lips, marks, skin tone] and [body proportions]. Render the same person, not a similar-looking person.
-
-Hairstyle fidelity: Preserve the exact hairstyle from Images 3-5: [hair color], [hairline and forehead exposure], [center or side part and direction], [length and texture], [bangs and face-framing wisps], [tied or loose style], [bun or ponytail height, position, and volume], and [ear visibility]. Adapt only viewing-angle perspective, natural wind response, and scene lighting. Do not inherit Image 1's hairstyle, change hair length, move the bun or ponytail, add or remove bangs, or redesign the hairstyle.
+Identity: Preserve the model's recognizable face, body proportions, skin tone, and hairstyle. Render the same person, not a similar-looking person. Match visible [face shape, eyes, nose, lips, and distinctive marks] to Images 3-5.
 
 Pose and composition: Match Image 1: [torso direction], [head direction and gaze], [left/right arm and hand interaction], [leg and foot placement], [body scale and location], [background landmarks].
 
@@ -31,9 +29,9 @@ Bag fidelity: Render exactly [quantity] bag(s): [silhouette, size, material, col
 
 Accessory placement: Render [exact earring pair] as one earring per ear. Place [bracelet count and allocation] on [frame-left wrist / frame-right wrist]. Prefer holding glasses or sunglasses naturally by one temple in the free or minimally adapted lowered hand, lenses facing down or outward; if that is impossible, hang them from the bag, then consider a discreet belt or garment-edge placement. Keep both eyes and defining facial features fully visible. Match accessory material, colors, stones or beads, silhouette, and scale to [Image 2 or accessory crop].
 
-Constraints: Keep Image 1's background and geometry visually unchanged. Keep the exact model identity and hairstyle from Images 3-5. Change only person identity, clothing, shoes, bag, jewelry, and explicitly requested styling.
+Constraints: Keep Image 1's background and geometry visually unchanged. Keep the exact model identity from Images 3-5. Change only person identity, clothing, shoes, bag, jewelry, and explicitly requested styling.
 
-Avoid: Image 1's original face or hairstyle, hairstyle redesign, wrong hair color, wrong parting, changed hair length, moved bun or ponytail, missing characteristic wisps, [old outfit and accessories from base image], missing or wrong bag, incorrect handles or straps, face drift, generic beauty-filter face, incorrect garment color, missing accessories, malformed hands, extra fingers, fused limbs, distorted straps, floating objects, extra people, text, logos, and watermarks.
+Avoid: [old outfit and accessories from base image], missing or wrong bag, incorrect handles or straps, face drift, generic beauty-filter face, incorrect garment color, missing accessories, malformed hands, extra fingers, fused limbs, distorted straps, floating objects, extra people, text, logos, and watermarks.
 ```
 
 ## Targeted revision form

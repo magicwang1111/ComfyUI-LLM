@@ -12,15 +12,7 @@ Inspect the generated image at original detail. Approve only when no high-impact
 
 - Same recognizable adult model, not merely similar.
 - Face shape, eye spacing, nose, lips, skin tone, and distinctive marks agree with references.
-- Head angle remains plausible for the target pose.
-
-## Hairstyle identity
-
-- Hair color, hairline shape and height, forehead exposure, and parting direction match the model references.
-- Hair length, texture, bangs, face-framing wisps, and tied or loose construction match the model references.
-- Bun or ponytail height, position, scale, and volume match the target-angle and full-body references.
-- Ear visibility agrees with the hairstyle and head angle; hair does not unnecessarily hide defining facial features or required earrings.
-- Only perspective, natural wind response, and scene-light highlights differ. The result does not inherit the base person's hairstyle or redesign the model's hair.
+- Head angle and hairstyle remain plausible for the target pose.
 
 ## Base-image preservation
 
@@ -58,4 +50,4 @@ Inspect the generated image at original detail. Approve only when no high-impact
 
 ## Revision decision
 
-Before approval, zoom in and explicitly verify the face, hairstyle, bag, and every listed accessory; do not infer their presence from the prompt. Revise only the highest-impact failed category. Treat hairstyle drift, a missing or wrong bag, missing paired earrings, incorrect jewelry colors or geometry, all bracelets collapsing onto one wrist, or identity-obscuring eyewear as required failures rather than harmless minor differences.
+Before approval, zoom in and explicitly verify the face, bag, and every listed accessory; do not infer their presence from the prompt. Revise only the highest-impact failed category. Treat face drift, a missing or wrong bag, missing paired earrings, incorrect jewelry colors or geometry, all bracelets collapsing onto one wrist, or identity-obscuring eyewear as required failures rather than harmless minor differences.

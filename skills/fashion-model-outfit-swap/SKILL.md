@@ -25,9 +25,9 @@ The built-in editor accepts at most five local reference paths. Select exactly t
 
 1. Base image.
 2. Outfit image.
-3. Model full-body frontal image for proportions and overall hairstyle silhouette.
-4. Model frontal close-up for facial identity, hairline, and parting.
-5. Model close-up whose head direction most closely matches the base image for side-face identity, hair volume, ear visibility, and bun or ponytail placement.
+3. Model full-body frontal image for proportions.
+4. Model frontal close-up for identity.
+5. Model close-up whose head direction most closely matches the base image.
 
 Use a different third model view only when it better resolves an occluded feature. Do not combine contact sheets unless the user asks for preprocessing. Explain briefly which images were selected; use unselected angles only for visual verification.
 
@@ -37,7 +37,7 @@ For an accessory-focused revision, replace the full-body model image with the us
 
 1. Inspect all inputs and assign roles.
 2. Read `references/prompt-template.md` and build one structured edit prompt.
-3. Extract the model's hairstyle inventory: hair color, hairline, parting direction, length, texture, bangs, face-framing wisps, tied or loose style, bun or ponytail height and position, volume, and ear visibility. Then extract the complete outfit inventory: garment type, color, neckline, sleeves, silhouette, length, waist details, fabric behavior, shoes, bag, jewelry, and other accessories. Record accessory count, pair/set membership, material, color, geometry, scale, and intended body location. For every bag, separately record quantity, silhouette, size, material, color, handles, shoulder or crossbody strap, closures, pockets, hardware, decorative details, and carry mode.
+3. Extract the complete outfit inventory: garment type, color, neckline, sleeves, silhouette, length, waist details, fabric behavior, shoes, bag, jewelry, and other accessories. Record accessory count, pair/set membership, material, color, geometry, scale, and intended body location. For every bag, separately record quantity, silhouette, size, material, color, handles, shoulder or crossbody strap, closures, pockets, hardware, decorative details, and carry mode.
 4. Separate controls explicitly:
    - base image controls pose, environment, composition, and lighting;
    - model images control identity, body proportions, skin tone, and hairstyle;
@@ -51,7 +51,7 @@ For an accessory-focused revision, replace the full-body model image with the us
 
 Resolve conflicts in this order:
 
-1. Model identity, recognizable facial structure, and exact hairstyle.
+1. Model identity and recognizable facial structure.
 2. Correct anatomy and plausible interaction with clothing/accessories.
 3. Base pose, framing, perspective, scene, and light direction.
 4. Outfit silhouette, color, construction, and complete accessory set.
@@ -77,14 +77,6 @@ Never let the outfit reference replace the model's face or let the base image's 
 - Include explicit negatives for the base model's old clothing and accessories.
 - Do not claim pixel-exact background preservation; request visually unchanged background, camera, and geometry.
 
-## Hairstyle fidelity
-
-- Treat hairstyle as part of model identity, not a styling option inherited from the base image.
-- Match the model references for hair color, hairline shape and height, forehead exposure, center or side part and its direction, hair length, straight or wavy texture, bangs, face-framing wisps, tied or loose construction, bun or ponytail height and position, volume, and ear visibility.
-- Use the frontal close-up to lock hairline and parting. Use the target-angle close-up to lock side volume, ear exposure, and bun or ponytail placement. Use the full-body image to verify the overall silhouette and scale.
-- Adapt only perspective, wind response, and highlight or shadow caused by the base pose and scene lighting. Do not redesign the hairstyle, change its length, move the bun or ponytail, add bangs, remove characteristic wisps, or inherit the base person's hair.
-- Keep hair edges, flyaways, and wisps natural without hiding defining facial features or required earrings.
-
 ## Accessory fidelity
 
 - Treat jewelry, glasses, belts, and bag hardware as independent required objects, not optional styling prose.
@@ -104,9 +96,9 @@ Never let the outfit reference replace the model's face or let the base image's 
 
 ## Revision policy
 
-Prioritize revision defects in this order: identity drift, hairstyle drift, or face occlusion; anatomy/hands; missing or wrong bag; wrong garment; wrong pose; required accessory mismatch; lighting mismatch; background drift; optional minor detail. Change one category per revision prompt.
+Prioritize revision defects in this order: identity drift or face occlusion, anatomy/hands, missing or wrong bag, wrong garment, wrong pose, required accessory mismatch, lighting mismatch, background drift, optional minor detail. Change one category per revision prompt.
 
-When identity is weak, strengthen face geometry and the matching-angle reference; do not add more wardrobe prose. When hairstyle is weak, restate the hairstyle inventory and matching-angle hair reference without changing face, clothing, pose, or background. When clothing is weak, restate garment construction and negatives without altering identity instructions. When hands are weak, specify the exact hand-object interaction and preserve everything else.
+When identity is weak, strengthen face geometry and the matching-angle reference; do not add more wardrobe prose. When clothing is weak, restate garment construction and negatives without altering identity instructions. When hands are weak, specify the exact hand-object interaction and preserve everything else.
 
 ## Delivery
 
