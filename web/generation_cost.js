@@ -6,6 +6,17 @@ const COST_NODE_NAMES = new Set([
     "ComfyUI-LLM Agent SDK",
 ]);
 
+function removeLegacyCostOutput(node) {
+    if (!COST_NODE_NAMES.has(node.type) || !Array.isArray(node.outputs)) {
+        return;
+    }
+    for (let index = node.outputs.length - 1; index >= 0; index -= 1) {
+        if (node.outputs[index]?.name === "estimated_cost") {
+            node.removeOutput(index);
+        }
+    }
+}
+
 function getOrCreateCostWidget(node) {
     let widget = node.widgets?.find((item) => item.name === "llm_cost");
     if (widget) {
@@ -30,6 +41,12 @@ function getOrCreateCostWidget(node) {
 
 app.registerExtension({
     name: "ComfyUILLMGenerationCost",
+    nodeCreated(node) {
+        removeLegacyCostOutput(node);
+    },
+    loadedGraphNode(node) {
+        removeLegacyCostOutput(node);
+    },
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (!COST_NODE_NAMES.has(nodeData.name)) {
             return;
