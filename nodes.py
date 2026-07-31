@@ -26,7 +26,9 @@ from .llm import (
     VapeurAPIError,
     build_request,
     create_runtime_client,
+    estimate_gpt_cost,
     extract_text,
+    format_cost_estimate,
     load_config,
     response_json,
     resolve_runtime_config,
@@ -127,6 +129,16 @@ class _BaseLLMNode:
 class GPTLLMNode(_BaseLLMNode):
     PROVIDER = "gpt"
     SUPPORTS_IMAGE = True
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("text", "response_json", "estimated_cost")
+
+    async def generate(self, *args, **kwargs):
+        model = kwargs.get("model")
+        if model is None and args:
+            model = args[0]
+        text, raw = await super().generate(*args, **kwargs)
+        estimate = estimate_gpt_cost(model, json.loads(raw))
+        return text, raw, format_cost_estimate(estimate)
 
 
 class ClaudeLLMNode(_BaseLLMNode):
@@ -248,6 +260,7 @@ class AgentSDKNode(_AgentNodeBase):
                 outputs=[
                     io.Image.Output(display_name="images"),
                     io.String.Output(display_name="text"),
+                    io.String.Output(display_name="estimated_cost"),
                 ],
                 hidden=[io.Hidden.unique_id],
                 is_output_node=True,
@@ -255,17 +268,17 @@ class AgentSDKNode(_AgentNodeBase):
 
         @classmethod
         async def execute(cls, **kwargs):
-            images, text = await cls().run_agent(
+            images, text, estimated_cost = await cls().run_agent(
                 **kwargs,
                 unique_id=cls.hidden.unique_id,
             )
-            return io.NodeOutput(images, text)
+            return io.NodeOutput(images, text, estimated_cost)
     else:
         OUTPUT_NODE = True
         CATEGORY = NODE_CATEGORY
         FUNCTION = "run_agent"
-        RETURN_TYPES = ("IMAGE", "STRING")
-        RETURN_NAMES = ("images", "text")
+        RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+        RETURN_NAMES = ("images", "text", "estimated_cost")
 
         @classmethod
         def INPUT_TYPES(cls):
@@ -397,6 +410,7 @@ class AgentSDKNode(_AgentNodeBase):
             "delivery_mode": delivery_mode,
             "route": route_data,
             "events": result.get("events", []),
+            "usage": result.get("usage"),
             "artifacts": artifact_data,
         }
         (artifacts.outputs_dir / "artifacts.json").write_text(
@@ -410,6 +424,7 @@ class AgentSDKNode(_AgentNodeBase):
         return (
             records_to_preview(artifacts.records),
             result["text"],
+            format_cost_estimate(result.get("usage"), agent=True),
         )
 
 

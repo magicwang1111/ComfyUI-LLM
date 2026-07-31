@@ -26,6 +26,7 @@ from .image_tools import (
     image_data_url,
     save_generated_images,
 )
+from .llm import estimate_gpt_cost
 from .skills_runtime import RouteDecision, route_with_rules
 
 
@@ -54,6 +55,7 @@ class ReasoningSummaryHooks(RunHooksBase):
         self.runtime = runtime
 
     async def on_llm_end(self, context, agent, response):
+        self.runtime._add_response_usage(response)
         for item in response.output:
             if getattr(item, "type", None) != "reasoning":
                 continue
@@ -108,6 +110,13 @@ class AgentRuntime:
         )
         self.script_python = str(script_python or sys.executable)
         self.events = []
+        self.usage = {
+            "estimated_cost_usd": 0.0,
+            "input_tokens": 0,
+            "cached_input_tokens": 0,
+            "output_tokens": 0,
+            "request_count": 0,
+        }
         self.event_callback = event_callback
         self.script_output_paths = set()
         self.client = AsyncOpenAI(
@@ -117,6 +126,25 @@ class AgentRuntime:
         )
         self.model = OpenAIResponsesModel(model=agent_model, openai_client=self.client)
         self.hooks = ReasoningSummaryHooks(self)
+
+    def _add_response_usage(self, response):
+        estimate = estimate_gpt_cost(self.agent_model, response)
+        if estimate is None:
+            return
+        self.usage["estimated_cost_usd"] += estimate["estimated_cost_usd"]
+        self.usage["input_tokens"] += estimate["input_tokens"]
+        self.usage["cached_input_tokens"] += estimate["cached_input_tokens"]
+        self.usage["output_tokens"] += estimate["output_tokens"]
+        self.usage["request_count"] += 1
+
+    def usage_summary(self):
+        if not self.usage["request_count"]:
+            return None
+        result = dict(self.usage)
+        result["estimated_cost_usd"] = round(result["estimated_cost_usd"], 12)
+        result["model"] = self.agent_model
+        result["currency"] = "USD"
+        return result
 
     def _record(self, event, message="", **details):
         payload = {"event": event, **details}
@@ -571,6 +599,7 @@ class AgentRuntime:
                 max_output_tokens=2048,
                 store=False,
             )
+            runtime._add_response_usage(response)
             inspection_result = str(response.output_text or "").strip()
             runtime._record(
                 "inspection_result",

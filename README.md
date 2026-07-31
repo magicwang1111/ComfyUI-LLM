@@ -11,10 +11,12 @@ ComfyUI custom nodes for text generation through [VapeurAI](https://vapeur.ai/).
 - `ComfyUI-LLM Agent Node`
 
 GPT, Claude, and Gemini accept one optional ComfyUI `IMAGE` for image
-understanding. DeepSeek is text-only. All nodes return:
+understanding. DeepSeek is text-only. The provider nodes return:
 
 - `text`: final model text, excluding thinking blocks
 - `response_json`: formatted provider response for diagnostics
+- GPT only: `estimated_cost`, calculated from the response token usage and
+  Vapeur's per-model input, cached-input, output, and 272K long-context rates
 
 The default system prompt rewrites Chinese scripts for concise short-video
 voice-over delivery. It remains editable in every node.
@@ -31,7 +33,10 @@ through Vapeur's `/v1/responses` route. Its controlled tools can:
 - save full-resolution local artifacts and optionally publish temporary copies
   to Alibaba Cloud OSS.
 
-The node exposes only an `IMAGE` preview batch and text summary. Full-resolution
+The node exposes an `IMAGE` preview batch, text summary, and `estimated_cost`
+for all GPT calls made by the agent. The estimate excludes image-generation
+charges. The structured usage summary is also persisted in `state.json`.
+Full-resolution
 originals, `artifacts.json`, and `state.json` are saved together in the task's
 job folder. With Account Manager enabled, the layout is
 `output/YYYY-MM-DD/<username>/ComfyUI-LLM-Agent/<job_id>/`; otherwise it falls

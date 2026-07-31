@@ -32,7 +32,14 @@ class FakeClient:
                     {"content": {"parts": [{"text": "final"}]}}
                 ]
             }
-        return {"choices": [{"message": {"content": "final"}}]}
+        return {
+            "choices": [{"message": {"content": "final"}}],
+            "usage": {
+                "prompt_tokens": 1_000,
+                "completion_tokens": 100,
+                "prompt_tokens_details": {"cached_tokens": 200},
+            },
+        }
 
     async def close(self):
         self.closed = True
@@ -68,6 +75,15 @@ class FakeAgentWorkerClient:
             },
             "text": "完成",
             "events": [{"event": "test"}],
+            "usage": {
+                "model": "gpt-5.5",
+                "currency": "USD",
+                "estimated_cost_usd": 0.0123,
+                "input_tokens": 1_000,
+                "cached_input_tokens": 200,
+                "output_tokens": 100,
+                "request_count": 2,
+            },
             "artifacts": [record.disk_dict()],
         }
 
@@ -90,6 +106,15 @@ class FakeTextAgentWorkerClient:
             },
             "text": "纯文字买手分析",
             "events": [{"event": "agent_completed"}],
+            "usage": {
+                "model": "gpt-5.5",
+                "currency": "USD",
+                "estimated_cost_usd": 0.004,
+                "input_tokens": 500,
+                "cached_input_tokens": 0,
+                "output_tokens": 50,
+                "request_count": 1,
+            },
             "artifacts": [],
         }
 
@@ -168,7 +193,7 @@ class NodeTests(unittest.TestCase):
         self.assertIn("批量AI换装", skill_options)
         self.assertEqual(
             tuple(nodes.AgentSDKNode.RETURN_NAMES),
-            ("images", "text"),
+            ("images", "text", "estimated_cost"),
         )
 
     def test_only_vision_nodes_have_image_input(self):
@@ -188,7 +213,7 @@ class NodeTests(unittest.TestCase):
     def test_node_returns_final_text_and_json(self):
         client = FakeClient()
         with patch.object(nodes, "create_runtime_client", return_value=client):
-            text, raw = asyncio.run(
+            text, raw, estimated_cost = asyncio.run(
                 nodes.GPTLLMNode().generate(
                     model="gpt-5.5",
                     thinking_level="medium",
@@ -198,6 +223,7 @@ class NodeTests(unittest.TestCase):
             )
         self.assertEqual(text, "final")
         self.assertIn('"content": "final"', raw)
+        self.assertIn("$0.007100 USD", estimated_cost)
         self.assertTrue(client.closed)
         self.assertEqual(client.calls[0][1], "/v1/chat/completions")
 
@@ -240,8 +266,10 @@ class NodeTests(unittest.TestCase):
             artifacts_share_output_dir = Path(artifact_data[0]["path"]).parent.samefile(
                 artifacts_path.parent
             )
-        images, text = result
+        images, text, estimated_cost = result
         self.assertEqual(text, "完成")
+        self.assertIn("$0.012300 USD", estimated_cost)
+        self.assertIn("不含图像生成费用", estimated_cost)
         self.assertEqual(artifact_data[0]["width"], 8)
         self.assertNotIn("signed_url", artifact_data[0])
         self.assertTrue(artifacts_share_output_dir)
@@ -322,8 +350,9 @@ class NodeTests(unittest.TestCase):
             state_path = artifacts_path.with_name("state.json")
             artifact_data = json.loads(artifacts_path.read_text("utf-8"))
             state_data = json.loads(state_path.read_text("utf-8"))
-        images, text = result
+        images, text, estimated_cost = result
         self.assertEqual(text, "纯文字买手分析")
+        self.assertIn("$0.004000 USD", estimated_cost)
         self.assertEqual(artifact_data, [])
         self.assertEqual(state_data["delivery_mode"], "text")
         self.assertEqual(tuple(images.shape), (1, 64, 64, 3))

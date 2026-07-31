@@ -78,6 +78,7 @@ async def _run(job):
             "route": route,
             "text": text,
             "events": runtime.events,
+            "usage": runtime.usage_summary(),
             "artifacts": [record.disk_dict() for record in store.records],
         }
     finally:

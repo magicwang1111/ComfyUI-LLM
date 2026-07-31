@@ -14,6 +14,7 @@ from .models import (
     DEFAULT_THINKING_LEVEL,
     THINKING_LEVELS,
     VAPEUR_BASE_URL,
+    gpt_pricing,
     model_spec,
 )
 
@@ -313,6 +314,111 @@ def extract_text(provider, response):
 
 def response_json(response):
     return json.dumps(response, ensure_ascii=False, indent=2)
+
+
+def _usage_value(container, name, default=0):
+    if isinstance(container, dict):
+        value = container.get(name, default)
+    else:
+        value = getattr(container, name, default)
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return default
+
+
+def extract_token_usage(response_or_usage):
+    if isinstance(response_or_usage, dict) and "usage" in response_or_usage:
+        usage = response_or_usage.get("usage")
+    else:
+        usage = getattr(response_or_usage, "usage", response_or_usage)
+    if not usage:
+        return None
+
+    input_tokens = _usage_value(
+        usage,
+        "prompt_tokens",
+        _usage_value(usage, "input_tokens"),
+    )
+    output_tokens = _usage_value(
+        usage,
+        "completion_tokens",
+        _usage_value(usage, "output_tokens"),
+    )
+    if not input_tokens and not output_tokens:
+        return None
+
+    if isinstance(usage, dict):
+        details = (
+            usage.get("prompt_tokens_details")
+            or usage.get("input_tokens_details")
+            or {}
+        )
+    else:
+        details = (
+            getattr(usage, "prompt_tokens_details", None)
+            or getattr(usage, "input_tokens_details", None)
+            or {}
+        )
+    cached_tokens = min(
+        input_tokens,
+        _usage_value(
+            details,
+            "cached_tokens",
+            _usage_value(usage, "cache_read_input_tokens"),
+        ),
+    )
+    return {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_tokens,
+        "output_tokens": output_tokens,
+    }
+
+
+def estimate_gpt_cost(model, response_or_usage):
+    usage = extract_token_usage(response_or_usage)
+    if usage is None:
+        return None
+
+    pricing = gpt_pricing(model)
+    threshold = pricing.get("long_context_threshold")
+    tier = (
+        "long_context"
+        if threshold is not None and usage["input_tokens"] > threshold
+        else "standard"
+    )
+    rates = pricing[tier]
+    billable_input = usage["input_tokens"] - usage["cached_input_tokens"]
+    cost = (
+        billable_input * rates["input"]
+        + usage["cached_input_tokens"] * rates["cached_input"]
+        + usage["output_tokens"] * rates["output"]
+    ) / 1_000_000
+    return {
+        "model": model,
+        "currency": "USD",
+        "estimated_cost_usd": round(cost, 12),
+        **usage,
+        "billable_input_tokens": billable_input,
+        "context_tier": tier,
+        "rates_per_1m_tokens": dict(rates),
+    }
+
+
+def format_cost_estimate(estimate, *, agent=False):
+    if not estimate:
+        return "无法预估：API 响应未返回 token usage。"
+    cost = float(estimate.get("estimated_cost_usd", 0.0))
+    input_tokens = int(estimate.get("input_tokens", 0))
+    cached_tokens = int(estimate.get("cached_input_tokens", 0))
+    output_tokens = int(estimate.get("output_tokens", 0))
+    request_count = int(estimate.get("request_count", 1))
+    request_text = f"，{request_count} 次 LLM 请求" if agent else ""
+    exclusion = "；不含图像生成费用" if agent else ""
+    return (
+        f"约 ${cost:.6f} USD（输入 {input_tokens:,} tokens，"
+        f"其中缓存 {cached_tokens:,}；输出 {output_tokens:,}{request_text}{exclusion}）"
+    )
 
 
 def _error_message(response):

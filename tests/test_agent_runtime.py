@@ -15,6 +15,43 @@ agent_runtime = import_module("agent_runtime")
 artifact_store = import_module("artifact_store")
 
 
+class UsageTests(unittest.TestCase):
+    def test_agent_usage_accumulates_per_response_cost(self):
+        runtime = agent_runtime.AgentRuntime.__new__(agent_runtime.AgentRuntime)
+        runtime.agent_model = "gpt-5.6-terra"
+        runtime.usage = {
+            "estimated_cost_usd": 0.0,
+            "input_tokens": 0,
+            "cached_input_tokens": 0,
+            "output_tokens": 0,
+            "request_count": 0,
+        }
+        first = SimpleNamespace(
+            usage=SimpleNamespace(
+                input_tokens=1_000,
+                output_tokens=100,
+                input_tokens_details=SimpleNamespace(cached_tokens=200),
+            )
+        )
+        second = SimpleNamespace(
+            usage=SimpleNamespace(
+                input_tokens=2_000,
+                output_tokens=200,
+                input_tokens_details=SimpleNamespace(cached_tokens=0),
+            )
+        )
+
+        runtime._add_response_usage(first)
+        runtime._add_response_usage(second)
+        summary = runtime.usage_summary()
+
+        self.assertEqual(summary["request_count"], 2)
+        self.assertEqual(summary["input_tokens"], 3_000)
+        self.assertEqual(summary["cached_input_tokens"], 200)
+        self.assertEqual(summary["output_tokens"], 300)
+        self.assertAlmostEqual(summary["estimated_cost_usd"], 0.01155)
+
+
 class OutputContractTests(unittest.TestCase):
     def runtime_with_store(self, root):
         runtime = agent_runtime.AgentRuntime.__new__(agent_runtime.AgentRuntime)

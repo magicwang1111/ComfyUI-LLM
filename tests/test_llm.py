@@ -139,6 +139,41 @@ class PayloadTests(unittest.TestCase):
             "final",
         )
 
+    def test_gpt_cost_uses_cached_tokens_and_long_context_tier(self):
+        standard = llm.estimate_gpt_cost(
+            "gpt-5.6-luna",
+            {
+                "usage": {
+                    "prompt_tokens": 100_000,
+                    "completion_tokens": 10_000,
+                    "prompt_tokens_details": {"cached_tokens": 20_000},
+                }
+            },
+        )
+        self.assertEqual(standard["context_tier"], "standard")
+        self.assertAlmostEqual(standard["estimated_cost_usd"], 0.142)
+
+        long_context = llm.estimate_gpt_cost(
+            "gpt-5.6-luna",
+            {
+                "usage": {
+                    "input_tokens": 300_000,
+                    "output_tokens": 10_000,
+                    "input_tokens_details": {"cached_tokens": 100_000},
+                }
+            },
+        )
+        self.assertEqual(long_context["context_tier"], "long_context")
+        self.assertAlmostEqual(long_context["estimated_cost_usd"], 0.51)
+
+    def test_gpt_cost_returns_none_without_usage(self):
+        self.assertIsNone(
+            llm.estimate_gpt_cost(
+                "gpt-5.4-mini",
+                {"choices": [{"message": {"content": "ok"}}]},
+            )
+        )
+
 
 class ConfigTests(unittest.TestCase):
     def test_vapeur_specific_key_wins_over_legacy_key(self):

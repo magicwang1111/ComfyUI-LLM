@@ -69,6 +69,40 @@ MODEL_SPECS = {
     },
 }
 
+# Vapeur model-square prices, checked 2026-07-31.
+# All rates are USD per 1M tokens. Models with long_context rates switch tiers
+# when the request input exceeds 272K tokens.
+GPT_PRICING = {
+    "gpt-5.6-sol": {
+        "standard": {"input": 5.0, "cached_input": 0.5, "output": 30.0},
+        "long_context": {"input": 10.0, "cached_input": 1.0, "output": 45.0},
+        "long_context_threshold": 272_000,
+    },
+    "gpt-5.6-terra": {
+        "standard": {"input": 2.5, "cached_input": 0.25, "output": 15.0},
+        "long_context": {"input": 5.0, "cached_input": 0.5, "output": 22.5},
+        "long_context_threshold": 272_000,
+    },
+    "gpt-5.6-luna": {
+        "standard": {"input": 1.0, "cached_input": 0.1, "output": 6.0},
+        "long_context": {"input": 2.0, "cached_input": 0.2, "output": 9.0},
+        "long_context_threshold": 272_000,
+    },
+    "gpt-5.5": {
+        "standard": {"input": 5.0, "cached_input": 0.5, "output": 30.0},
+        "long_context": {"input": 10.0, "cached_input": 1.0, "output": 45.0},
+        "long_context_threshold": 272_000,
+    },
+    "gpt-5.4": {
+        "standard": {"input": 2.5, "cached_input": 0.25, "output": 15.0},
+        "long_context": {"input": 5.0, "cached_input": 0.5, "output": 22.5},
+        "long_context_threshold": 272_000,
+    },
+    "gpt-5.4-mini": {
+        "standard": {"input": 0.75, "cached_input": 0.08, "output": 4.5},
+    },
+}
+
 
 def model_names(provider):
     return list(MODEL_SPECS[provider]["models"])
@@ -83,3 +117,10 @@ def model_spec(provider, model):
         return MODEL_SPECS[provider]["models"][model]
     except KeyError as exc:
         raise ValueError(f"Unsupported {provider} model: {model}") from exc
+
+
+def gpt_pricing(model):
+    try:
+        return GPT_PRICING[model]
+    except KeyError as exc:
+        raise ValueError(f"Pricing is unavailable for GPT model: {model}") from exc
