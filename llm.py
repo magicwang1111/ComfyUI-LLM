@@ -413,12 +413,16 @@ def format_cost_estimate(estimate, *, agent=False):
     cached_tokens = int(estimate.get("cached_input_tokens", 0))
     output_tokens = int(estimate.get("output_tokens", 0))
     request_count = int(estimate.get("request_count", 1))
-    request_text = f"，{request_count} 次 LLM 请求" if agent else ""
-    exclusion = "；不含图像生成费用" if agent else ""
-    return (
-        f"约 ${cost:.6f} USD（输入 {input_tokens:,} tokens，"
-        f"其中缓存 {cached_tokens:,}；输出 {output_tokens:,}{request_text}{exclusion}）"
+    details = (
+        f"输入 {input_tokens:,} · 缓存 {cached_tokens:,} · "
+        f"输出 {output_tokens:,} tokens"
     )
+    if agent:
+        details = (
+            f"LLM {details} · {request_count} 次请求"
+            "（不含生图）"
+        )
+    return f"本次费用（预估）：${cost:.6f}\n{details}"
 
 
 def _error_message(response):

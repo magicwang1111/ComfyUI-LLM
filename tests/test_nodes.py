@@ -7,7 +7,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import numpy as np
 from PIL import Image
@@ -193,7 +193,7 @@ class NodeTests(unittest.TestCase):
         self.assertIn("批量AI换装", skill_options)
         self.assertEqual(
             tuple(nodes.AgentSDKNode.RETURN_NAMES),
-            ("images", "text", "estimated_cost"),
+            ("images", "text"),
         )
 
     def test_only_vision_nodes_have_image_input(self):
@@ -213,7 +213,7 @@ class NodeTests(unittest.TestCase):
     def test_node_returns_final_text_and_json(self):
         client = FakeClient()
         with patch.object(nodes, "create_runtime_client", return_value=client):
-            text, raw, estimated_cost = asyncio.run(
+            node_result = asyncio.run(
                 nodes.GPTLLMNode().generate(
                     model="gpt-5.5",
                     thinking_level="medium",
@@ -221,11 +221,29 @@ class NodeTests(unittest.TestCase):
                     user_prompt="rewrite",
                 )
             )
+        text, raw = node_result["result"]
+        estimated_cost = node_result["ui"]["llm_cost"][0]
         self.assertEqual(text, "final")
         self.assertIn('"content": "final"', raw)
-        self.assertIn("$0.007100 USD", estimated_cost)
+        self.assertEqual(
+            estimated_cost,
+            "本次费用（预估）：$0.007100\n"
+            "输入 1,000 · 缓存 200 · 输出 100 tokens",
+        )
         self.assertTrue(client.closed)
         self.assertEqual(client.calls[0][1], "/v1/chat/completions")
+
+    def test_agent_legacy_execution_returns_cost_as_ui_only(self):
+        node = nodes.AgentSDKNode()
+        with patch.object(
+            node,
+            "run_agent",
+            AsyncMock(return_value=("images", "text", "cost summary")),
+        ):
+            node_result = asyncio.run(node.execute_legacy())
+
+        self.assertEqual(node_result["result"], ("images", "text"))
+        self.assertEqual(node_result["ui"]["llm_cost"], ["cost summary"])
 
     def test_agent_node_returns_artifacts_and_state(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -268,8 +286,8 @@ class NodeTests(unittest.TestCase):
             )
         images, text, estimated_cost = result
         self.assertEqual(text, "完成")
-        self.assertIn("$0.012300 USD", estimated_cost)
-        self.assertIn("不含图像生成费用", estimated_cost)
+        self.assertIn("$0.012300", estimated_cost)
+        self.assertIn("不含生图", estimated_cost)
         self.assertEqual(artifact_data[0]["width"], 8)
         self.assertNotIn("signed_url", artifact_data[0])
         self.assertTrue(artifacts_share_output_dir)
@@ -352,7 +370,7 @@ class NodeTests(unittest.TestCase):
             state_data = json.loads(state_path.read_text("utf-8"))
         images, text, estimated_cost = result
         self.assertEqual(text, "纯文字买手分析")
-        self.assertIn("$0.004000 USD", estimated_cost)
+        self.assertIn("$0.004000", estimated_cost)
         self.assertEqual(artifact_data, [])
         self.assertEqual(state_data["delivery_mode"], "text")
         self.assertEqual(tuple(images.shape), (1, 64, 64, 3))

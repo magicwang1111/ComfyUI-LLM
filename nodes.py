@@ -129,8 +129,6 @@ class _BaseLLMNode:
 class GPTLLMNode(_BaseLLMNode):
     PROVIDER = "gpt"
     SUPPORTS_IMAGE = True
-    RETURN_TYPES = ("STRING", "STRING", "STRING")
-    RETURN_NAMES = ("text", "response_json", "estimated_cost")
 
     async def generate(self, *args, **kwargs):
         model = kwargs.get("model")
@@ -138,7 +136,10 @@ class GPTLLMNode(_BaseLLMNode):
             model = args[0]
         text, raw = await super().generate(*args, **kwargs)
         estimate = estimate_gpt_cost(model, json.loads(raw))
-        return text, raw, format_cost_estimate(estimate)
+        return {
+            "ui": {"llm_cost": [format_cost_estimate(estimate)]},
+            "result": (text, raw),
+        }
 
 
 class ClaudeLLMNode(_BaseLLMNode):
@@ -260,7 +261,6 @@ class AgentSDKNode(_AgentNodeBase):
                 outputs=[
                     io.Image.Output(display_name="images"),
                     io.String.Output(display_name="text"),
-                    io.String.Output(display_name="estimated_cost"),
                 ],
                 hidden=[io.Hidden.unique_id],
                 is_output_node=True,
@@ -272,13 +272,17 @@ class AgentSDKNode(_AgentNodeBase):
                 **kwargs,
                 unique_id=cls.hidden.unique_id,
             )
-            return io.NodeOutput(images, text, estimated_cost)
+            return io.NodeOutput(
+                images,
+                text,
+                ui={"llm_cost": [estimated_cost]},
+            )
     else:
         OUTPUT_NODE = True
         CATEGORY = NODE_CATEGORY
-        FUNCTION = "run_agent"
-        RETURN_TYPES = ("IMAGE", "STRING", "STRING")
-        RETURN_NAMES = ("images", "text", "estimated_cost")
+        FUNCTION = "execute_legacy"
+        RETURN_TYPES = ("IMAGE", "STRING")
+        RETURN_NAMES = ("images", "text")
 
         @classmethod
         def INPUT_TYPES(cls):
@@ -305,6 +309,13 @@ class AgentSDKNode(_AgentNodeBase):
                 },
                 "hidden": {"unique_id": "UNIQUE_ID"},
             }
+
+    async def execute_legacy(self, **kwargs):
+        images, text, estimated_cost = await self.run_agent(**kwargs)
+        return {
+            "ui": {"llm_cost": [estimated_cost]},
+            "result": (images, text),
+        }
 
     async def run_agent(
         self,
