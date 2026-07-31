@@ -158,6 +158,18 @@ class DeepSeekLLMNode(_BaseLLMNode):
 
 AGENT_IMAGE_MODELS = ["gpt-image-2"]
 AGENT_PROGRESS_EVENT = "comfyui-llm-agent-progress"
+AGENT_PROGRESS_SAFE_KEYS = {
+    "event",
+    "message",
+    "tool",
+    "count",
+    "input_count",
+    "output_count",
+    "size",
+    "skill",
+    "image_name",
+    "returncode",
+}
 
 SKILL_LABELS = {
     "auto": "自动选择",
@@ -179,20 +191,12 @@ def _skill_value(value):
     return reverse.get(value, value)
 
 
+def _sanitize_agent_progress(event):
+    return {key: value for key, value in event.items() if key in AGENT_PROGRESS_SAFE_KEYS}
+
+
 def _send_agent_progress(unique_id, event):
-    safe_keys = {
-        "event",
-        "message",
-        "tool",
-        "count",
-        "input_count",
-        "output_count",
-        "size",
-        "skill",
-        "image_name",
-        "returncode",
-    }
-    payload = {key: value for key, value in event.items() if key in safe_keys}
+    payload = _sanitize_agent_progress(event)
     message = str(payload.get("message") or payload.get("event") or "").strip()
     if message:
         event_name = str(payload.get("event") or "status")
@@ -268,14 +272,18 @@ class AgentSDKNode(_AgentNodeBase):
 
         @classmethod
         async def execute(cls, **kwargs):
-            images, text, estimated_cost = await cls().run_agent(
+            node = cls()
+            images, text, estimated_cost = await node.run_agent(
                 **kwargs,
                 unique_id=cls.hidden.unique_id,
             )
             return io.NodeOutput(
                 images,
                 text,
-                ui={"llm_cost": [estimated_cost]},
+                ui={
+                    "llm_cost": [estimated_cost],
+                    "agent_progress": getattr(node, "_last_agent_progress", []),
+                },
             )
     else:
         OUTPUT_NODE = True
@@ -313,7 +321,10 @@ class AgentSDKNode(_AgentNodeBase):
     async def execute_legacy(self, **kwargs):
         images, text, estimated_cost = await self.run_agent(**kwargs)
         return {
-            "ui": {"llm_cost": [estimated_cost]},
+            "ui": {
+                "llm_cost": [estimated_cost],
+                "agent_progress": getattr(self, "_last_agent_progress", []),
+            },
             "result": (images, text),
         }
 
@@ -424,6 +435,11 @@ class AgentSDKNode(_AgentNodeBase):
             "usage": result.get("usage"),
             "artifacts": artifact_data,
         }
+        self._last_agent_progress = [
+            payload
+            for event in result.get("events", [])
+            if (payload := _sanitize_agent_progress(event)).get("message")
+        ]
         (artifacts.outputs_dir / "artifacts.json").write_text(
             json.dumps(artifact_data, ensure_ascii=False, indent=2),
             encoding="utf-8",

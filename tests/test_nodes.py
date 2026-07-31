@@ -74,7 +74,7 @@ class FakeAgentWorkerClient:
                 "needs_input": False,
             },
             "text": "完成",
-            "events": [{"event": "test"}],
+            "events": [{"event": "status", "message": "test progress"}],
             "usage": {
                 "model": "gpt-5.5",
                 "currency": "USD",
@@ -244,6 +244,23 @@ class NodeTests(unittest.TestCase):
 
         self.assertEqual(node_result["result"], ("images", "text"))
         self.assertEqual(node_result["ui"]["llm_cost"], ["cost summary"])
+        self.assertEqual(node_result["ui"]["agent_progress"], [])
+
+    def test_agent_progress_payload_is_sanitized_for_ui_replay(self):
+        event = {
+            "event": "reasoning_summary",
+            "message": "推理摘要",
+            "tool": "inspect_generated_image",
+            "path": "D:/secret/file.png",
+        }
+        self.assertEqual(
+            nodes._sanitize_agent_progress(event),
+            {
+                "event": "reasoning_summary",
+                "message": "推理摘要",
+                "tool": "inspect_generated_image",
+            },
+        )
 
     def test_agent_node_returns_artifacts_and_state(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -265,8 +282,9 @@ class NodeTests(unittest.TestCase):
                 ),
                 patch.object(nodes, "AgentWorkerClient", FakeAgentWorkerClient),
             ):
+                node = nodes.AgentSDKNode()
                 result = asyncio.run(
-                    nodes.AgentSDKNode().run_agent(
+                    node.run_agent(
                         prompt="设计一件外套",
                         agent_model="gpt-5.5",
                         skill_override="auto",
@@ -294,6 +312,10 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(state_data["status"], "completed")
         self.assertEqual(state_data["delivery_mode"], "image")
         self.assertEqual(tuple(images.shape), (1, 6, 8, 3))
+        self.assertEqual(
+            node._last_agent_progress,
+            [{"event": "status", "message": "test progress"}],
+        )
 
     def test_dynamic_inputs_preserve_dimensions_and_image_zero_sets_size_reference(self):
         with tempfile.TemporaryDirectory() as temp:

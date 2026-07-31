@@ -73,13 +73,15 @@ app.registerExtension({
             this.size[0] = Math.max(this.size[0], 620);
             this._agentProgressLines = [];
             this._agentProgressElement = log;
-            this._appendAgentProgress = (event) => {
+            this._appendAgentProgress = (event, includeTime = true) => {
                 if (event.event === "reset") {
                     this._agentProgressLines = [];
                 }
                 const message = event.message || event.event;
-                const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-                this._agentProgressLines.push(`[${time}] ${message}`);
+                const prefix = includeTime
+                    ? `[${new Date().toLocaleTimeString("zh-CN", { hour12: false })}] `
+                    : "";
+                this._agentProgressLines.push(`${prefix}${message}`);
                 this._agentProgressLines = this._agentProgressLines.slice(-100);
                 log.value = this._agentProgressLines.join("\n");
                 log.scrollTop = log.scrollHeight;
@@ -92,6 +94,19 @@ app.registerExtension({
             const result = originalOnConfigure?.apply(this, arguments);
             removeLegacyOutputs(this);
             return result;
+        };
+
+        const originalOnExecuted = nodeType.prototype.onExecuted;
+        nodeType.prototype.onExecuted = function (message) {
+            originalOnExecuted?.apply(this, arguments);
+            const events = message?.agent_progress;
+            if (!Array.isArray(events) || !events.length || !this._appendAgentProgress) {
+                return;
+            }
+            this._agentProgressLines = [];
+            for (const event of events) {
+                this._appendAgentProgress(event, false);
+            }
         };
     },
 });
