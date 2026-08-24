@@ -10,9 +10,10 @@ skills_runtime = import_module("skills_runtime")
 class SkillRegistryTests(unittest.TestCase):
     def test_discovers_all_current_skills(self):
         registry = skills_runtime.SkillRegistry()
-        self.assertEqual(len(registry.skills), 11)
+        self.assertEqual(len(registry.skills), 12)
         self.assertIn("batch-ai-tryon", registry.skills)
         self.assertIn("fashion-model-outfit-swap", registry.skills)
+        self.assertIn("outfit-white-background-stylist-0824", registry.skills)
         self.assertIn("world-buyer", registry.skills)
         self.assertEqual(registry.errors, [])
 
@@ -49,6 +50,8 @@ class RoutingTests(unittest.TestCase):
         cases = {
             "给这个模特批量换装": "batch-ai-tryon",
             "生成服装白底平铺图": "batch-clothing-white-bg-images",
+            "生成0824白底图搭配": "outfit-white-background-stylist-0824",
+            "做一张无字搭配图": "outfit-white-background-stylist-0824",
             "严格按模板做详情页": "batch-apparel-detail-pages",
             "分析这款衣服的爆款基因": "hot-style-analyzer",
             "帮我做环球买手找款": "world-buyer",

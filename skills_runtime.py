@@ -143,6 +143,10 @@ class SkillRegistry:
 
 
 _ROUTE_RULES = [
+    (
+        "outfit-white-background-stylist-0824",
+        ("0824白底图搭配", "无字搭配图", "纯白底搭配图", "text-free outfit flat lay"),
+    ),
     ("batch-apparel-detail-pages", ("详情页", "详情模板", "detail page")),
     ("batch-ai-tryon", ("换装", "试衣", "try-on", "try on")),
     ("batch-clothing-white-bg-images", ("白底", "去模特", "平铺图", "挂拍", "white background")),
@@ -164,6 +168,7 @@ _VISUAL_REQUIRED = {
     "clothing-display-image-to-image",
     "hot-style-analyzer",
     "outfit-flatlay-stylist",
+    "outfit-white-background-stylist-0824",
     "print-pattern-derivation",
 }
 

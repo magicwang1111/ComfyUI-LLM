@@ -726,6 +726,22 @@ class AgentRuntime:
         required_image_tool = None if text_only else (
             "edit_images" if image_paths else "generate_image"
         )
+        review_instruction = (
+            "For this fast-path skill, read the requested outfit/image count as dynamic N. "
+            "Create N materially different outfit plans, then make N independent image-tool "
+            "calls with output_count=1; each call must receive a self-contained prompt for "
+            "only one look. Never combine several look descriptions in one prompt or request "
+            "multiple outputs in one image-tool call. Submit independent calls in parallel "
+            "when possible. After successful generation, do not call inspect_generated_image "
+            "or make_contact_sheet, and do not retry unless the image tool itself fails or "
+            "the user explicitly asks."
+            if skill.name == "outfit-white-background-stylist-0824"
+            else "Inspect important generated images against the skill quality gate. "
+            "Retry only when a concrete defect is found. Call "
+            "inspect_generated_image with the exact output filename returned by "
+            "generate_image or edit_images; never infer an image from list position, "
+            "numeric index, or tool completion order."
+        )
         self._record("status", f"正在执行 Skill：{skill.name}…")
         contract = f"""
 
@@ -738,8 +754,7 @@ Original input files are numbered in the order returned by list_input_files.
 Use edit_images when visual references must be preserved and generate_image when there is no visual reference.
 For edit_images, pass size="auto" by default. It preserves dynamic image0's aspect ratio when available, otherwise the first selected input image's ratio, while targeting the same total pixels as 2048x2048. Pass an explicit WIDTHxHEIGHT only when the user explicitly requests that output size or aspect ratio.
 When image artifacts are required, a final text response before an image tool has successfully returned is invalid.
-Inspect important generated images against the skill quality gate. Retry only when a concrete defect is found.
-Call inspect_generated_image with the exact output filename returned by generate_image or edit_images. Never infer an image from list position, numeric index, or tool completion order.
+{review_instruction}
 For a retry, preserve the original output_name stem and append `_重做` or `_final` so the old candidate is replaced, including when the filename starts with a date or timestamp.
 Use run_skill_script only for scripts explicitly shipped under this skill's scripts directory.
 Finish with a concise Chinese summary. Do not expose credentials or signed URL query parameters.

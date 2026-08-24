@@ -1,0 +1,4 @@
+interface:
+  display_name: "0824白底图搭配"
+  short_description: "快速生成无文字、纯白背景的完整服装搭配平铺图"
+  default_prompt: "Use $outfit-white-background-stylist-0824 to create a complete text-free outfit flat lay on a pure white background."
