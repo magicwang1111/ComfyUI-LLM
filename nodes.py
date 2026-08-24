@@ -273,7 +273,7 @@ class AgentSDKNode(_AgentNodeBase):
         @classmethod
         async def execute(cls, **kwargs):
             node = cls()
-            images, text, estimated_cost = await node.run_agent(
+            images, text, estimated_cost, agent_progress = await node.run_agent(
                 **kwargs,
                 unique_id=cls.hidden.unique_id,
             )
@@ -282,7 +282,7 @@ class AgentSDKNode(_AgentNodeBase):
                 text,
                 ui={
                     "llm_cost": [estimated_cost],
-                    "agent_progress": getattr(node, "_last_agent_progress", []),
+                    "agent_progress": agent_progress,
                 },
             )
     else:
@@ -319,11 +319,11 @@ class AgentSDKNode(_AgentNodeBase):
             }
 
     async def execute_legacy(self, **kwargs):
-        images, text, estimated_cost = await self.run_agent(**kwargs)
+        images, text, estimated_cost, agent_progress = await self.run_agent(**kwargs)
         return {
             "ui": {
                 "llm_cost": [estimated_cost],
-                "agent_progress": getattr(self, "_last_agent_progress", []),
+                "agent_progress": agent_progress,
             },
             "result": (images, text),
         }
@@ -435,7 +435,7 @@ class AgentSDKNode(_AgentNodeBase):
             "usage": result.get("usage"),
             "artifacts": artifact_data,
         }
-        self._last_agent_progress = [
+        agent_progress = [
             payload
             for event in result.get("events", [])
             if (payload := _sanitize_agent_progress(event)).get("message")
@@ -452,6 +452,7 @@ class AgentSDKNode(_AgentNodeBase):
             records_to_preview(artifacts.records),
             result["text"],
             format_cost_estimate(result.get("usage"), agent=True),
+            agent_progress,
         )
 
 

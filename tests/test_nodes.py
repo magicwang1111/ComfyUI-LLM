@@ -238,7 +238,7 @@ class NodeTests(unittest.TestCase):
         with patch.object(
             node,
             "run_agent",
-            AsyncMock(return_value=("images", "text", "cost summary")),
+            AsyncMock(return_value=("images", "text", "cost summary", [])),
         ):
             node_result = asyncio.run(node.execute_legacy())
 
@@ -263,6 +263,10 @@ class NodeTests(unittest.TestCase):
         )
 
     def test_agent_node_returns_artifacts_and_state(self):
+        class ImmutableAgentSDKNode(nodes.AgentSDKNode):
+            def __setattr__(self, name, value):
+                raise AttributeError(f"Cannot set attribute {name!r} on immutable instance")
+
         with tempfile.TemporaryDirectory() as temp:
             config = {
                 "allowed_output_roots": [temp],
@@ -282,7 +286,7 @@ class NodeTests(unittest.TestCase):
                 ),
                 patch.object(nodes, "AgentWorkerClient", FakeAgentWorkerClient),
             ):
-                node = nodes.AgentSDKNode()
+                node = ImmutableAgentSDKNode()
                 result = asyncio.run(
                     node.run_agent(
                         prompt="设计一件外套",
@@ -302,7 +306,7 @@ class NodeTests(unittest.TestCase):
             artifacts_share_output_dir = Path(artifact_data[0]["path"]).parent.samefile(
                 artifacts_path.parent
             )
-        images, text, estimated_cost = result
+        images, text, estimated_cost, agent_progress = result
         self.assertEqual(text, "完成")
         self.assertIn("$0.012300", estimated_cost)
         self.assertIn("不含生图", estimated_cost)
@@ -313,7 +317,7 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(state_data["delivery_mode"], "image")
         self.assertEqual(tuple(images.shape), (1, 6, 8, 3))
         self.assertEqual(
-            node._last_agent_progress,
+            agent_progress,
             [{"event": "status", "message": "test progress"}],
         )
 
@@ -390,9 +394,10 @@ class NodeTests(unittest.TestCase):
             state_path = artifacts_path.with_name("state.json")
             artifact_data = json.loads(artifacts_path.read_text("utf-8"))
             state_data = json.loads(state_path.read_text("utf-8"))
-        images, text, estimated_cost = result
+        images, text, estimated_cost, agent_progress = result
         self.assertEqual(text, "纯文字买手分析")
         self.assertIn("$0.004000", estimated_cost)
+        self.assertEqual(agent_progress, [])
         self.assertEqual(artifact_data, [])
         self.assertEqual(state_data["delivery_mode"], "text")
         self.assertEqual(tuple(images.shape), (1, 64, 64, 3))
