@@ -239,6 +239,58 @@ class ModelSettingsTests(unittest.TestCase):
 
 
 class InspectionProgressTests(unittest.TestCase):
+    def test_outfit_swap_uses_reordered_scene_as_size_reference(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = agent_runtime.AgentRuntime.__new__(agent_runtime.AgentRuntime)
+            runtime.artifact_store = artifact_store.LocalArtifactStore(temp, flat_outputs=True)
+            runtime.events = []
+            runtime.event_callback = None
+            runtime.image_model = "gpt-image-2"
+            runtime.mask_path = None
+
+            inputs = []
+            for index in range(5):
+                path = Path(temp) / f"input-{index + 1}.png"
+                Image.new("RGB", (100 + index, 200), "white").save(path)
+                inputs.append(path)
+            runtime.size_reference_path = inputs[0]
+
+            class ImageClient:
+                def __init__(self):
+                    self.size_reference = None
+
+                async def edit(self, **kwargs):
+                    self.size_reference = kwargs["size_reference"]
+                    return [Image.new("RGB", (8, 8), "white")]
+
+            runtime.image_client = ImageClient()
+            skill = SimpleNamespace(name="fashion-model-outfit-swap", path=Path(temp))
+            tools = runtime._tools(skill, inputs)
+            edit_tool = next(tool for tool in tools if tool.name == "edit_images")
+            arguments = json.dumps(
+                {
+                    "prompt": "test",
+                    "image_indices": [5, 1, 2, 3, 4],
+                    "n": 1,
+                    "size": "auto",
+                    "output_name": "result.png",
+                }
+            )
+
+            asyncio.run(
+                edit_tool.on_invoke_tool(
+                    ToolContext(
+                        None,
+                        tool_name="edit_images",
+                        tool_call_id="edit-call",
+                        tool_arguments=arguments,
+                    ),
+                    arguments,
+                )
+            )
+
+            self.assertEqual(runtime.image_client.size_reference, inputs[4])
+
     def test_output_lookup_uses_exact_filename_not_completion_order(self):
         records = [
             SimpleNamespace(kind="output", path="01_first.png"),
@@ -294,6 +346,58 @@ class InspectionProgressTests(unittest.TestCase):
                     "image_name": "checked.png",
                 },
                 runtime.events,
+            )
+
+    def test_inspection_can_compare_generated_image_with_source_input(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = agent_runtime.AgentRuntime.__new__(agent_runtime.AgentRuntime)
+            runtime.artifact_store = artifact_store.LocalArtifactStore(temp, flat_outputs=True)
+            input_path = Path(temp) / "scene.png"
+            output_path = runtime.artifact_store.outputs_dir / "candidate.png"
+            Image.new("RGB", (3, 4), "blue").save(input_path)
+            Image.new("RGB", (3, 4), "white").save(output_path)
+            runtime.artifact_store.add(output_path, width=3, height=4)
+            runtime.events = []
+            runtime.event_callback = None
+            runtime.agent_model = "test-model"
+
+            class Responses:
+                def __init__(self):
+                    self.input = None
+
+                async def create(self, **kwargs):
+                    self.input = kwargs["input"]
+                    return SimpleNamespace(output_text="场景一致。")
+
+            responses = Responses()
+            runtime.client = SimpleNamespace(responses=responses)
+            tools = runtime._tools(SimpleNamespace(path=Path(temp)), [input_path])
+            inspect_tool = next(tool for tool in tools if tool.name == "inspect_generated_image")
+            arguments = json.dumps(
+                {
+                    "image_name": "candidate.png",
+                    "checklist": "对比场景和构图",
+                    "reference_image_indices": [1],
+                }
+            )
+
+            result = asyncio.run(
+                inspect_tool.on_invoke_tool(
+                    ToolContext(
+                        None,
+                        tool_name="inspect_generated_image",
+                        tool_call_id="compare-call",
+                        tool_arguments=arguments,
+                    ),
+                    arguments,
+                )
+            )
+
+            content = responses.input[0]["content"]
+            self.assertEqual(result, "场景一致。")
+            self.assertEqual(
+                [item["type"] for item in content],
+                ["input_text", "input_text", "input_image", "input_text", "input_image"],
             )
 
     def test_outfit_swap_allows_only_one_inspection_per_task(self):

@@ -148,6 +148,10 @@ _ROUTE_RULES = [
         ("0824白底图搭配", "无字搭配图", "纯白底搭配图", "text-free outfit flat lay"),
     ),
     ("batch-apparel-detail-pages", ("详情页", "详情模板", "detail page")),
+    (
+        "fashion-model-outfit-swap",
+        ("模特参考图", "场景参考图", "替换人物", "替换模特", "model identity replacement"),
+    ),
     ("batch-ai-tryon", ("换装", "试衣", "try-on", "try on")),
     ("batch-clothing-white-bg-images", ("白底", "去模特", "平铺图", "挂拍", "white background")),
     ("batch-clothing-product-images", ("商品主图", "电商主图", "批量主图", "product image")),
@@ -166,6 +170,7 @@ _VISUAL_REQUIRED = {
     "batch-clothing-white-bg-images",
     "batch-clothing-product-images",
     "clothing-display-image-to-image",
+    "fashion-model-outfit-swap",
     "hot-style-analyzer",
     "outfit-flatlay-stylist",
     "outfit-white-background-stylist-0824",
@@ -223,4 +228,6 @@ def route_with_rules(registry, prompt, skill_override="auto", image_count=0, inp
     missing = []
     if selected in _VISUAL_REQUIRED and not image_count and not input_path:
         missing.append("请提供 IMAGE 输入，或在 input_path 中指定包含参考图片的路径。")
+    if selected == "fashion-model-outfit-swap" and image_count and image_count != 5:
+        missing.append("此 Skill 需要恰好 5 张图片：4 张同一模特参考图和 1 张场景参考图。")
     return RouteDecision(selected, mode, confidence, roles, missing, reason)

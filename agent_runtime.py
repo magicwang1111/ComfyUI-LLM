@@ -553,7 +553,11 @@ class AgentRuntime:
                 n=n,
                 size=size,
                 mask=runtime.mask_path,
-                size_reference=getattr(runtime, "size_reference_path", None),
+                size_reference=(
+                    selected[0]
+                    if getattr(skill, "name", "") == "fashion-model-outfit-swap" and selected
+                    else getattr(runtime, "size_reference_path", None)
+                ),
             )
             records = save_generated_images(images, runtime.artifact_store, output_name)
             runtime._record(
@@ -565,16 +569,48 @@ class AgentRuntime:
             )
             return json.dumps([item.disk_dict() for item in records], ensure_ascii=False)
 
-        async def inspect_generated_image(image_name: str, checklist: str) -> str:
-            """Inspect one generated image by its exact filename returned by an image tool."""
+        async def inspect_generated_image(
+            image_name: str,
+            checklist: str,
+            reference_image_indices: list[int] | None = None,
+        ) -> str:
+            """Inspect one generated image, optionally comparing it with numbered task inputs."""
             nonlocal inspection_count
             output = runtime._output_by_name(runtime.artifact_store.records, image_name)
             if inspection_limit is not None and inspection_count >= inspection_limit:
                 raise ValueError(
                     "fashion-model-outfit-swap allows at most one image inspection per task."
                 )
+            for index in reference_image_indices or []:
+                if index < 1 or index > len(input_paths):
+                    raise ValueError(f"reference image index {index} is out of range.")
             inspection_count += 1
             filename = Path(output.path).name
+            content = [{"type": "input_text", "text": checklist}]
+            for position, index in enumerate(reference_image_indices or [], 1):
+                content.extend(
+                    [
+                        {
+                            "type": "input_text",
+                            "text": f"Reference image {position} (original task input {index}):",
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": image_data_url(input_paths[index - 1]),
+                            "detail": "high",
+                        },
+                    ]
+                )
+            content.extend(
+                [
+                    {"type": "input_text", "text": "Generated candidate to inspect:"},
+                    {
+                        "type": "input_image",
+                        "image_url": image_data_url(output.path),
+                        "detail": "high",
+                    },
+                ]
+            )
             runtime._record(
                 "tool_start",
                 f"正在复核生成图片：{filename}",
@@ -586,14 +622,7 @@ class AgentRuntime:
                 input=[
                     {
                         "role": "user",
-                        "content": [
-                            {"type": "input_text", "text": checklist},
-                            {
-                                "type": "input_image",
-                                "image_url": image_data_url(output.path),
-                                "detail": "high",
-                            },
-                        ],
+                        "content": content,
                     }
                 ],
                 max_output_tokens=2048,

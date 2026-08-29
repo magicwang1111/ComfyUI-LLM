@@ -10,11 +10,12 @@ skills_runtime = import_module("skills_runtime")
 class SkillRegistryTests(unittest.TestCase):
     def test_discovers_all_current_skills(self):
         registry = skills_runtime.SkillRegistry()
-        self.assertEqual(len(registry.skills), 12)
-        self.assertIn("batch-ai-tryon", registry.skills)
-        self.assertIn("fashion-model-outfit-swap", registry.skills)
-        self.assertIn("outfit-white-background-stylist-0824", registry.skills)
-        self.assertIn("world-buyer", registry.skills)
+        required = {
+            "batch-ai-tryon",
+            "outfit-white-background-stylist-0824",
+            "world-buyer",
+        }
+        self.assertTrue(required.issubset(registry.skills))
         self.assertEqual(registry.errors, [])
 
     def test_resource_cannot_escape_skill_directory(self):
@@ -42,6 +43,7 @@ class SkillRegistryTests(unittest.TestCase):
 class RoutingTests(unittest.TestCase):
     def setUp(self):
         self.registry = skills_runtime.SkillRegistry()
+        self.registry.skills.setdefault("fashion-model-outfit-swap", object())
 
     def route(self, prompt, **kwargs):
         return skills_runtime.route_with_rules(self.registry, prompt, **kwargs)
@@ -49,6 +51,7 @@ class RoutingTests(unittest.TestCase):
     def test_routes_representative_tasks(self):
         cases = {
             "给这个模特批量换装": "batch-ai-tryon",
+            "用四张模特参考图替换场景参考图里的人物": "fashion-model-outfit-swap",
             "生成服装白底平铺图": "batch-clothing-white-bg-images",
             "生成0824白底图搭配": "outfit-white-background-stylist-0824",
             "做一张无字搭配图": "outfit-white-background-stylist-0824",
@@ -79,6 +82,25 @@ class RoutingTests(unittest.TestCase):
         )
         self.assertEqual(decision.skill_name, "fashion-design-analysis")
         self.assertEqual(decision.confidence, 1.0)
+
+    def test_model_swap_requires_exactly_five_images(self):
+        incomplete = self.route("用模特参考图替换场景参考图里的人物", image_count=4)
+        self.assertEqual(incomplete.skill_name, "fashion-model-outfit-swap")
+        self.assertTrue(incomplete.needs_input)
+        self.assertIn("恰好 5 张图片", incomplete.missing_inputs[0])
+
+        ready = self.route("用模特参考图替换场景参考图里的人物", image_count=5)
+        self.assertFalse(ready.needs_input)
+
+    def test_model_swap_is_not_selected_when_skill_is_not_installed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            registry = skills_runtime.SkillRegistry(temp)
+            decision = skills_runtime.route_with_rules(
+                registry,
+                "用模特参考图替换场景参考图里的人物",
+                image_count=5,
+            )
+        self.assertNotEqual(decision.skill_name, "fashion-model-outfit-swap")
 
 
 if __name__ == "__main__":
