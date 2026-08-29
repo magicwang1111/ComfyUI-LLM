@@ -4,3 +4,4 @@ __pycache__/
 config.local.json
 .agent_env/
 output/
+skills/fashion-model-outfit-swap/
