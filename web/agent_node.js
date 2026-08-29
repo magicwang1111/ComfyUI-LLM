@@ -3,6 +3,54 @@ import { api } from "../../../scripts/api.js";
 
 const PROGRESS_EVENT = "comfyui-llm-agent-progress";
 const LEGACY_OUTPUTS = new Set(["output_path", "artifacts_json", "state_json"]);
+const AGENT_NODE_NAME = "ComfyUI-LLM Agent SDK";
+
+function skillOptionsFromNodeInfo(payload) {
+    const input = payload?.[AGENT_NODE_NAME]?.input?.required?.skill_override;
+    if (!Array.isArray(input)) {
+        return [];
+    }
+    if (Array.isArray(input[0])) {
+        return input[0];
+    }
+    if (input[0] === "COMBO" && Array.isArray(input[1]?.options)) {
+        return input[1].options;
+    }
+    return [];
+}
+
+async function refreshSkillOptions(node) {
+    const widget = node.widgets?.find((item) => item.name === "skill_override");
+    if (!widget) {
+        return;
+    }
+    const refreshId = (node._skillOptionsRefreshId || 0) + 1;
+    node._skillOptionsRefreshId = refreshId;
+    const response = await api.fetchApi(
+        `/object_info/${encodeURIComponent(AGENT_NODE_NAME)}`,
+        { cache: "no-store" },
+    );
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+    const options = skillOptionsFromNodeInfo(await response.json());
+    if (!options.length || node._skillOptionsRefreshId !== refreshId) {
+        return;
+    }
+    widget.options ||= {};
+    widget.options.values = [...options];
+    if (!options.includes(widget.value)) {
+        widget.value = options[0];
+        widget.callback?.(widget.value);
+    }
+    node.setDirtyCanvas?.(true, true);
+}
+
+function scheduleSkillOptionsRefresh(node) {
+    void refreshSkillOptions(node).catch((error) => {
+        console.warn("[ComfyUI-LLM] Failed to refresh Skill options:", error);
+    });
+}
 
 function findNode(nodeId) {
     return app.graph?._nodes?.find((node) => String(node.id) === String(nodeId));
@@ -28,6 +76,7 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = function () {
             const result = originalOnNodeCreated?.apply(this, arguments);
             removeLegacyOutputs(this);
+            scheduleSkillOptionsRefresh(this);
             const outputDir = this.widgets?.find((widget) => widget.name === "output_dir");
             if (outputDir) {
                 outputDir.computeSize = () => [0, -4];
@@ -93,6 +142,7 @@ app.registerExtension({
         nodeType.prototype.onConfigure = function () {
             const result = originalOnConfigure?.apply(this, arguments);
             removeLegacyOutputs(this);
+            scheduleSkillOptionsRefresh(this);
             return result;
         };
 

@@ -196,6 +196,17 @@ class NodeTests(unittest.TestCase):
             ("images", "text"),
         )
 
+    def test_agent_skill_options_only_include_live_registry_entries(self):
+        registry = SimpleNamespace(names=lambda: ["world-buyer"])
+        with patch.object(nodes, "SkillRegistry", return_value=registry):
+            inputs = nodes.AgentSDKNode.INPUT_TYPES()
+
+        skill_input = inputs["required"]["skill_override"]
+        skill_options = skill_input[1]["options"] if skill_input[0] == "COMBO" else skill_input[0]
+        self.assertEqual(skill_options, ["自动选择", "世界服装买手"])
+        self.assertNotIn("fashion-model-outfit-swap", skill_options)
+        self.assertNotIn("multi-view-fashion-shoot", skill_options)
+
     def test_only_vision_nodes_have_image_input(self):
         for cls in (
             nodes.GPTLLMNode,
