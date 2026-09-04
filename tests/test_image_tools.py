@@ -63,90 +63,96 @@ class ImageToolTests(unittest.TestCase):
         self.assertEqual(seen[0], ("api.vapeur.ai", "Bearer secret-key"))
         self.assertEqual(seen[1], ("files.example", None))
 
-    def test_bananapro_generate_decodes_base64(self):
+    def test_bananapro_generate_uses_vapeur_gemini_protocol(self):
         async def handler(request):
-            self.assertEqual(request.url.host, "aihubmix.com")
-            self.assertEqual(request.url.path, "/ai/v1/images/generations")
-            self.assertEqual(request.headers["authorization"], "Bearer banana-key")
+            self.assertEqual(request.url.host, "api.vapeur.ai")
             self.assertEqual(
-                json.loads(request.content),
-                {"model": "gemini-3-pro-image", "prompt": "test"},
+                request.url.path,
+                "/gemini/v1beta/models/gemini-3-pro-image:generateContent",
+            )
+            self.assertEqual(request.headers["x-goog-api-key"], "vapeur-key")
+            body = json.loads(request.content)
+            self.assertEqual(body["contents"][0]["parts"], [{"text": "test"}])
+            self.assertEqual(body["generationConfig"]["responseModalities"], ["IMAGE", "TEXT"])
+            self.assertEqual(
+                body["generationConfig"]["imageConfig"],
+                {"aspectRatio": "16:9", "imageSize": "2K"},
             )
             return httpx.Response(
                 200,
-                json={"id": "task", "status": "completed", "output": [{"b64_json": encoded_png()}]},
+                json={
+                    "candidates": [
+                        {"content": {"parts": [{"inlineData": {"data": encoded_png()}}]}}
+                    ]
+                },
             )
 
         async def run():
-            client = image_tools.BananaProImageClient(
-                "banana-key", transport=httpx.MockTransport(handler)
+            client = image_tools.VapeurNanoBananaClient(
+                "vapeur-key", transport=httpx.MockTransport(handler)
             )
             try:
-                return await client.generate("test")
+                return await client.generate("test", size="2560x1440")
             finally:
                 await client.close()
 
         images = asyncio.run(run())
         self.assertEqual(images[0].size, (5, 4))
 
-    def test_bananapro_content_url_download_sends_bearer_key(self):
-        seen = []
-
+    def test_bananapro_edit_sends_reference_images(self):
         async def handler(request):
-            seen.append((request.url.path, request.headers.get("authorization")))
-            if request.url.path == "/ai/v1/images/generations":
-                return httpx.Response(
-                    200,
-                    json={"output": [{"content_url": "https://aihubmix.com/content/result.png"}]},
-                )
+            body = json.loads(request.content)
+            parts = body["contents"][0]["parts"]
+            self.assertEqual(parts[0], {"text": "edit"})
+            self.assertEqual(len(parts), 3)
+            self.assertEqual(parts[1]["inlineData"]["mimeType"], "image/png")
+            self.assertEqual(parts[2]["inlineData"]["mimeType"], "image/jpeg")
+            self.assertEqual(
+                body["generationConfig"]["imageConfig"]["aspectRatio"],
+                "9:16",
+            )
+            self.assertEqual(
+                body["generationConfig"]["imageConfig"]["imageSize"],
+                "1K",
+            )
             return httpx.Response(
                 200,
-                content=base64.b64decode(encoded_png()),
-                headers={"content-type": "image/png"},
+                json={
+                    "candidates": [
+                        {"content": {"parts": [{"inlineData": {"data": encoded_png()}}]}}
+                    ]
+                },
             )
 
-        async def run():
-            client = image_tools.BananaProImageClient(
-                "banana-key", transport=httpx.MockTransport(handler)
-            )
-            try:
-                return await client.generate("test")
-            finally:
-                await client.close()
+        with tempfile.TemporaryDirectory() as temp:
+            png_path = Path(temp) / "one.png"
+            jpg_path = Path(temp) / "two.jpg"
+            Image.new("RGB", (900, 1600), "white").save(png_path)
+            Image.new("RGB", (4, 3), "blue").save(jpg_path)
 
-        images = asyncio.run(run())
+            async def run():
+                client = image_tools.VapeurNanoBananaClient(
+                    "vapeur-key", transport=httpx.MockTransport(handler)
+                )
+                try:
+                    return await client.edit("edit", [png_path, jpg_path])
+                finally:
+                    await client.close()
+
+            images = asyncio.run(run())
         self.assertEqual(images[0].size, (5, 4))
-        self.assertEqual(
-            seen,
-            [
-                ("/ai/v1/images/generations", "Bearer banana-key"),
-                ("/content/result.png", "Bearer banana-key"),
-            ],
-        )
-
-    def test_bananapro_edit_is_explicitly_rejected(self):
-        async def run():
-            client = image_tools.BananaProImageClient("banana-key")
-            try:
-                with self.assertRaisesRegex(ValueError, "text-to-image"):
-                    await client.edit("edit", [])
-            finally:
-                await client.close()
-
-        asyncio.run(run())
 
     def test_image_client_factory_selects_bananapro_and_its_key(self):
         config = {
             "api_key": "vapeur-key",
-            "aihubmix_api_key": "banana-key",
             "timeout": 30,
             "max_retries": 0,
             "retry_delay": 0,
         }
         client = image_tools.create_image_client("bananapro", config)
         try:
-            self.assertIsInstance(client, image_tools.BananaProImageClient)
-            self.assertEqual(client.api_key, "banana-key")
+            self.assertIsInstance(client, image_tools.VapeurNanoBananaClient)
+            self.assertEqual(client.api_key, "vapeur-key")
         finally:
             asyncio.run(client.close())
 

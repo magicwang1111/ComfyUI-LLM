@@ -96,7 +96,6 @@ Copy `config.example.json` to `config.local.json` and set the key:
 ```json
 {
   "VAPEUR_API_KEY": "sk-...",
-  "AIHUBMIX_API_KEY": "sk-...",
   "request_timeout": 600,
   "request_retries": 1,
   "retry_delay": 2,
@@ -111,10 +110,9 @@ Copy `config.example.json` to `config.local.json` and set the key:
 }
 ```
 
-`VAPEUR_API_KEY` and `AIHUBMIX_API_KEY` can also be supplied as environment variables.
-`AIHUBMIX_API_KEY` is only required when the Agent image model is `bananapro`.
-BananaPro maps to the AIHubMix `gemini-3-pro-image` text-to-image endpoint and does
-not currently support reference-image editing; use `gpt-image-2` for edit workflows. A legacy
+`VAPEUR_API_KEY` can also be supplied as an environment variable. The same key is used
+by `bananapro`, which supports Nano Banana text-to-image and reference-image editing
+through Vapeur and defaults to 1K output. A legacy
 generic `api_key` is accepted only when `api_provider` is explicitly
 `vapeur`. The LLM nodes always call `https://api.vapeur.ai`; legacy Azure or
 relay `base_url` values are ignored.
@@ -161,7 +159,7 @@ the source of truth if OSS upload fails.
 | Gemini | `/gemini/v1beta/models/{model}:generateContent` | `x-goog-api-key` |
 | Agent Node | `/v1/responses` | Bearer |
 | Agent images (`gpt-image-2`) | `/v1/images/generations`, `/v1/images/edits` | Bearer |
-| Agent images (`bananapro`) | `https://aihubmix.com/ai/v1/images/generations` | Bearer |
+| Agent images (`bananapro`) | `/gemini/v1beta/models/gemini-3-pro-image:generateContent` | `x-goog-api-key` |
 
 `thinking_level` is normalized to `off`, `low`, `medium`, or `high`.
 Providers that cannot fully disable thinking use their lowest supported level.

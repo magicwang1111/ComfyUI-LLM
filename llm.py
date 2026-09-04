@@ -85,13 +85,8 @@ def resolve_runtime_config():
     if retry_delay < 0:
         raise ValueError("retry_delay must be a non-negative number.")
 
-    aihubmix_api_key = str(data.get("AIHUBMIX_API_KEY") or "").strip()
-    if not aihubmix_api_key:
-        aihubmix_api_key = os.getenv("AIHUBMIX_API_KEY", "").strip()
-
     return {
         "api_key": api_key,
-        "aihubmix_api_key": aihubmix_api_key,
         "timeout": timeout,
         "max_retries": retries,
         "retry_delay": retry_delay,
