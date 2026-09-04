@@ -38,12 +38,7 @@ async def _run(job):
         job_dir=job["job_dir"],
         flat_outputs=bool(job.get("flat_outputs")),
     )
-    image_client = image_tools.VapeurImageClient(
-        api_key=runtime_config["api_key"],
-        timeout=runtime_config["timeout"],
-        max_retries=runtime_config["max_retries"],
-        retry_delay=runtime_config["retry_delay"],
-    )
+    image_client = image_tools.create_image_client(job["image_model"], runtime_config)
     runtime = agent_runtime.AgentRuntime(
         registry=skills_runtime.SkillRegistry(),
         artifact_store=store,

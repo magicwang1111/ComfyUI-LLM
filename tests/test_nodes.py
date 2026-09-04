@@ -185,7 +185,7 @@ class NodeTests(unittest.TestCase):
             if image_model_input[0] == "COMBO"
             else image_model_input[0]
         )
-        self.assertEqual(image_model_options, ["gpt-image-2"])
+        self.assertEqual(image_model_options, ["gpt-image-2", "bananapro"])
         self.assertTrue(inputs["required"]["publish_to_oss"][1]["default"])
         skill_input = inputs["required"]["skill_override"]
         skill_options = skill_input[1]["options"] if skill_input[0] == "COMBO" else skill_input[0]

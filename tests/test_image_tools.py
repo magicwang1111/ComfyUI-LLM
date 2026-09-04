@@ -63,6 +63,93 @@ class ImageToolTests(unittest.TestCase):
         self.assertEqual(seen[0], ("api.vapeur.ai", "Bearer secret-key"))
         self.assertEqual(seen[1], ("files.example", None))
 
+    def test_bananapro_generate_decodes_base64(self):
+        async def handler(request):
+            self.assertEqual(request.url.host, "aihubmix.com")
+            self.assertEqual(request.url.path, "/ai/v1/images/generations")
+            self.assertEqual(request.headers["authorization"], "Bearer banana-key")
+            self.assertEqual(
+                json.loads(request.content),
+                {"model": "gemini-3-pro-image", "prompt": "test"},
+            )
+            return httpx.Response(
+                200,
+                json={"id": "task", "status": "completed", "output": [{"b64_json": encoded_png()}]},
+            )
+
+        async def run():
+            client = image_tools.BananaProImageClient(
+                "banana-key", transport=httpx.MockTransport(handler)
+            )
+            try:
+                return await client.generate("test")
+            finally:
+                await client.close()
+
+        images = asyncio.run(run())
+        self.assertEqual(images[0].size, (5, 4))
+
+    def test_bananapro_content_url_download_sends_bearer_key(self):
+        seen = []
+
+        async def handler(request):
+            seen.append((request.url.path, request.headers.get("authorization")))
+            if request.url.path == "/ai/v1/images/generations":
+                return httpx.Response(
+                    200,
+                    json={"output": [{"content_url": "https://aihubmix.com/content/result.png"}]},
+                )
+            return httpx.Response(
+                200,
+                content=base64.b64decode(encoded_png()),
+                headers={"content-type": "image/png"},
+            )
+
+        async def run():
+            client = image_tools.BananaProImageClient(
+                "banana-key", transport=httpx.MockTransport(handler)
+            )
+            try:
+                return await client.generate("test")
+            finally:
+                await client.close()
+
+        images = asyncio.run(run())
+        self.assertEqual(images[0].size, (5, 4))
+        self.assertEqual(
+            seen,
+            [
+                ("/ai/v1/images/generations", "Bearer banana-key"),
+                ("/content/result.png", "Bearer banana-key"),
+            ],
+        )
+
+    def test_bananapro_edit_is_explicitly_rejected(self):
+        async def run():
+            client = image_tools.BananaProImageClient("banana-key")
+            try:
+                with self.assertRaisesRegex(ValueError, "text-to-image"):
+                    await client.edit("edit", [])
+            finally:
+                await client.close()
+
+        asyncio.run(run())
+
+    def test_image_client_factory_selects_bananapro_and_its_key(self):
+        config = {
+            "api_key": "vapeur-key",
+            "aihubmix_api_key": "banana-key",
+            "timeout": 30,
+            "max_retries": 0,
+            "retry_delay": 0,
+        }
+        client = image_tools.create_image_client("bananapro", config)
+        try:
+            self.assertIsInstance(client, image_tools.BananaProImageClient)
+            self.assertEqual(client.api_key, "banana-key")
+        finally:
+            asyncio.run(client.close())
+
     def test_edit_uses_multipart_and_multiple_images(self):
         async def handler(request):
             self.assertEqual(request.url.path, "/v1/images/edits")

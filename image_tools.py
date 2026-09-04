@@ -12,6 +12,8 @@ from PIL import Image, ImageOps
 
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 DEFAULT_IMAGE_MODEL = "gpt-image-2"
+BANANAPRO_IMAGE_MODEL = "bananapro"
+BANANAPRO_API_MODEL = "gemini-3-pro-image"
 DEFAULT_IMAGE_PIXEL_BUDGET = 2048 * 2048
 
 
@@ -273,6 +275,123 @@ class VapeurImageClient:
     async def close(self):
         await self.client.aclose()
         await self.download_client.aclose()
+
+
+class BananaProImageClient:
+    def __init__(self, api_key, timeout=600, max_retries=1, retry_delay=2.0, transport=None):
+        if not str(api_key or "").strip():
+            raise ValueError(
+                "AIHUBMIX_API_KEY is required in config.local.json or the environment "
+                "when image_model is bananapro."
+            )
+        self.api_key = str(api_key).strip()
+        self.max_retries = max(0, int(max_retries))
+        self.retry_delay = max(0.0, float(retry_delay))
+        self.client = httpx.AsyncClient(
+            base_url="https://aihubmix.com",
+            timeout=httpx.Timeout(float(timeout)),
+            follow_redirects=True,
+            transport=transport,
+        )
+
+    @property
+    def headers(self):
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    async def _request(self, method, path, **kwargs):
+        attempts = self.max_retries + 1
+        for attempt in range(attempts):
+            try:
+                response = await self.client.request(method, path, headers=self.headers, **kwargs)
+                if response.status_code >= 400:
+                    message = response.text[:1000]
+                    try:
+                        payload = response.json()
+                        error = payload.get("error", payload)
+                        message = error.get("message", error) if isinstance(error, dict) else error
+                    except ValueError:
+                        pass
+                    raise ValueError(f"BananaPro image API error {response.status_code}: {message}")
+                return response
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                if attempt + 1 >= attempts:
+                    raise ValueError(
+                        f"BananaPro image request failed after {attempts} attempt(s): "
+                        f"{type(exc).__name__}: {exc}"
+                    ) from exc
+                if self.retry_delay:
+                    await asyncio.sleep(self.retry_delay)
+        raise RuntimeError("unreachable")
+
+    async def _materialize(self, payload):
+        if payload.get("error"):
+            raise ValueError(f"BananaPro image API error: {payload['error']}")
+        items = payload.get("output")
+        if not isinstance(items, list) or not items:
+            raise ValueError("BananaPro image response did not contain output items.")
+        images = []
+        for item in items:
+            encoded = item.get("b64_json")
+            if encoded:
+                raw = base64.b64decode(encoded, validate=True)
+            elif item.get("content_url"):
+                response = await self._request("GET", item["content_url"])
+                content_type = response.headers.get("content-type", "")
+                if content_type and not content_type.startswith("image/"):
+                    raise ValueError(
+                        f"BananaPro content URL returned unexpected content type: {content_type}"
+                    )
+                raw = response.content
+            else:
+                raise ValueError(
+                    "BananaPro image result contained neither b64_json nor content_url."
+                )
+            if len(raw) > 25 * 1024 * 1024:
+                raise ValueError("Downloaded image exceeded the 25 MB safety limit.")
+            try:
+                with Image.open(io.BytesIO(raw)) as image:
+                    images.append(image.convert("RGB").copy())
+            except OSError as exc:
+                raise ValueError("BananaPro image API returned invalid image bytes.") from exc
+        return images
+
+    async def generate(self, prompt, model=BANANAPRO_IMAGE_MODEL, n=1, size="1024x1024"):
+        if model != BANANAPRO_IMAGE_MODEL:
+            raise ValueError(f"Unsupported BananaPro image model: {model}")
+        images = []
+        for _ in range(max(1, min(int(n), 10))):
+            response = await self._request(
+                "POST",
+                "/ai/v1/images/generations",
+                json={"model": BANANAPRO_API_MODEL, "prompt": prompt},
+            )
+            images.extend(await self._materialize(response.json()))
+        return images
+
+    async def edit(self, *args, **kwargs):
+        raise ValueError(
+            "bananapro currently supports text-to-image generation only; "
+            "select gpt-image-2 when reference-image editing is required."
+        )
+
+    async def close(self):
+        await self.client.aclose()
+
+
+def create_image_client(image_model, runtime_config, transport=None):
+    client_type = BananaProImageClient if image_model == BANANAPRO_IMAGE_MODEL else VapeurImageClient
+    api_key = (
+        runtime_config.get("aihubmix_api_key")
+        if image_model == BANANAPRO_IMAGE_MODEL
+        else runtime_config["api_key"]
+    )
+    return client_type(
+        api_key=api_key,
+        timeout=runtime_config["timeout"],
+        max_retries=runtime_config["max_retries"],
+        retry_delay=runtime_config["retry_delay"],
+        transport=transport,
+    )
 
 
 def _content_type(path):

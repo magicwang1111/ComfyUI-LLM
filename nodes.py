@@ -156,7 +156,7 @@ class DeepSeekLLMNode(_BaseLLMNode):
     PROVIDER = "deepseek"
 
 
-AGENT_IMAGE_MODELS = ["gpt-image-2"]
+AGENT_IMAGE_MODELS = ["gpt-image-2", "bananapro"]
 AGENT_PROGRESS_EVENT = "comfyui-llm-agent-progress"
 AGENT_PROGRESS_SAFE_KEYS = {
     "event",

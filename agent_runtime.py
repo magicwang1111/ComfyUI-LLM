@@ -489,7 +489,7 @@ class AgentRuntime:
             return text[:50000]
 
         async def generate_image(prompt: str, n: int, size: str, output_name: str) -> str:
-            """Generate images with the configured Vapeur image model and save final PNG files."""
+            """Generate images with the configured image model and save final PNG files."""
             runtime._record(
                 "image_prompt",
                 f"图片提示词：\n{prompt}",
