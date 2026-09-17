@@ -125,6 +125,79 @@ class OutputContractTests(unittest.TestCase):
             self.assertFalse(Path(rejected.path).exists())
             self.assertTrue(Path(final.path).exists())
 
+    def test_faceless_repeated_retries_keep_three_deliverables(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = self.runtime_with_store(temp)
+            names = [
+                "style_1_polished_commuter.png",
+                "style_2_relaxed_weekend.png",
+                "style_3_city_athleisure.png",
+                "style_1_polished_commuter_重做.png",
+                "style_3_city_athleisure_重做.png",
+                "style_1_polished_commuter_final.png",
+                "style_3_city_athleisure_final.png",
+                "style_1_polished_commuter_final2.png",
+                "style_3_city_athleisure_final2.png",
+                "style_1_polished_commuter_final3.png",
+            ]
+            candidates = [self.add_output(runtime, name) for name in names]
+            input_path = runtime.artifact_store.inputs_dir / "reference.png"
+            input_path.write_bytes(b"reference")
+            reference = runtime.artifact_store.add(input_path, kind="input")
+            notes = self.add_output(runtime, "notes.txt")
+
+            kept = runtime._enforce_output_contract(
+                "faceless-outfit-stylist", [], candidates
+            )
+
+            self.assertEqual(kept, [candidates[9], candidates[1], candidates[8]])
+            self.assertEqual(runtime.artifact_store.records, [reference, notes] + kept)
+            for item in candidates:
+                self.assertEqual(Path(item.path).exists(), item in kept)
+            self.assertTrue(input_path.exists())
+            self.assertTrue(Path(notes.path).exists())
+            manifest = runtime.artifact_store.write_manifest("faceless-outfit-stylist")
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertEqual(
+                [item["path"] for item in payload["artifacts"] if item["content_type"].startswith("image/") and item["kind"] == "output"],
+                [item.path for item in kept],
+            )
+
+    def test_retry_chains_use_registration_order_and_preserve_unrelated_images(self):
+        for names in (
+            ["look.png", "look_final10.png", "look_final2.png"],
+            ["look.png", "look_retry2.png", "look_retry2_final3.png"],
+            ["look_final.png", "look_final_重做2.png", "look_final_重做2_final_3.png"],
+            ["look_final2.png", "look_final3.png"],
+            ["look.png", "look_FINAL2.png", "look_final2_2.png"],
+            ["look.png", "look_v2.png", "look_final_v3.png"],
+        ):
+            with self.subTest(names=names), tempfile.TemporaryDirectory() as temp:
+                runtime = self.runtime_with_store(temp)
+                candidates = [self.add_output(runtime, name) for name in names]
+                unrelated = [self.add_output(runtime, name) for name in (
+                    "look_finale.png", "look_retryable.png", "look_2.png", "other_final2.png",
+                )]
+                kept = runtime._enforce_output_contract(
+                    "outfit-flatlay-stylist", [], candidates + unrelated
+                )
+                self.assertEqual(kept, candidates[-1:] + unrelated)
+                self.assertEqual(runtime.artifact_store.records, kept)
+                for item in candidates + unrelated:
+                    self.assertEqual(Path(item.path).exists(), item in kept)
+                self.assertEqual(runtime._replace_named_retries(kept), kept)
+
+    def test_numbered_slot_recognizes_numbered_retry_with_changed_description(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = self.runtime_with_store(temp)
+            original = self.add_output(runtime, "01_commuter.png")
+            revised = self.add_output(runtime, "01_polished_final2.png")
+            kept = runtime._enforce_output_contract(
+                "outfit-flatlay-stylist", [], [original, revised]
+            )
+            self.assertEqual(kept, [revised])
+            self.assertFalse(Path(original.path).exists())
+
     def test_fashion_swap_keeps_only_registered_script_output(self):
         with tempfile.TemporaryDirectory() as temp:
             runtime = self.runtime_with_store(temp)

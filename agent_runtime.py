@@ -212,7 +212,7 @@ class AgentRuntime:
     def _is_named_retry(item):
         return bool(
             re.search(
-                r"(?:^|[_\-\s])(?:重做|最终(?:版)?|final|retry|redo|revised|fixed|v\d+)(?:[_\-\s]|$)",
+                r"(?:^|[_\-\s])(?:(?:重做|最终(?:版)?|final|retry|redo|revised|fixed)\d*|v\d+)(?:[_\-\s]|$)",
                 Path(item.path).stem,
                 flags=re.IGNORECASE,
             )
@@ -222,8 +222,8 @@ class AgentRuntime:
     def _retry_base_stem(item):
         stem = Path(item.path).stem
         match = re.search(
-            r"(?:[_\-\s])(?:重做|最终(?:版)?|final|retry|redo|revised|fixed|v\d+)"
-            r"(?:[_-](?:\d+|v\d+))?$",
+            r"(?:[_\-\s](?:(?:重做|最终(?:版)?|final|retry|redo|revised|fixed)\d*|v\d+)"
+            r"(?:[_-](?:\d+|v\d+))?)+$",
             stem,
             flags=re.IGNORECASE,
         )
@@ -248,24 +248,16 @@ class AgentRuntime:
 
     def _replace_named_retries(self, image_outputs):
         original_outputs = list(image_outputs)
-        output_stems = {
-            Path(item.path).stem.casefold() for item in original_outputs
-        }
         latest_by_base = {}
         for item in original_outputs:
-            base = self._retry_base_stem(item)
-            if base in output_stems:
-                latest_by_base[base] = item
+            base = self._retry_base_stem(item) or Path(item.path).stem.casefold()
+            latest_by_base[base] = item
 
         kept = []
         emitted_bases = set()
         for item in original_outputs:
-            stem = Path(item.path).stem.casefold()
-            retry_base = self._retry_base_stem(item)
-            base = stem if stem in latest_by_base else retry_base
-            if base not in latest_by_base:
-                kept.append(item)
-            elif base not in emitted_bases:
+            base = self._retry_base_stem(item) or Path(item.path).stem.casefold()
+            if base not in emitted_bases:
                 kept.append(latest_by_base[base])
                 emitted_bases.add(base)
 
