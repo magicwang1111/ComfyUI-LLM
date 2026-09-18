@@ -1,0 +1,4 @@
+interface:
+  display_name: "通用无脸穿搭造型师"
+  short_description: "仅依据本次商品生成三种纯白底俯拍搭配图"
+  default_prompt: "使用 $universal-flatlay-outfit-stylist，只使用本轮上传或明确指定的主商品一次生成三张独立的纯白底 90° 俯拍搭配图，不继承历史品类或搭配选择，不复检或重做。"
