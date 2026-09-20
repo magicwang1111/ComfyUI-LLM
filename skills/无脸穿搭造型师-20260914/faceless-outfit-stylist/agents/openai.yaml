@@ -1,4 +1,0 @@
-interface:
-  display_name: "三风格单品搭配师"
-  short_description: "生成三种风格的纯白底90度俯拍商品搭配图"
-  default_prompt: "Use $faceless-outfit-stylist to create three separate product-only flat-lay outfit images on uniform pure-white backgrounds using a strict 90-degree overhead view, ignoring the reference image background."
