@@ -26,6 +26,14 @@ voice-over delivery. It remains editable in every node.
 
 ### Gemini video to product voice-over
 
+Import [the example workflow](examples/gemini_video_product_voiceover.json) into
+ComfyUI, upload your reference video in **Load Video**, replace the example
+product facts in `user_prompt`, and click Run. The final script appears in
+**Preview as Text**. The example selects `gemini-3.8-flash` with `low` thinking
+and uses only this plugin plus built-in ComfyUI nodes. It contains no video or
+API key; the existing Vapeur configuration is used. Restart ComfyUI after
+updating the plugin so the video input and current model list are available.
+
 Connect ComfyUI's **Load Video** `VIDEO` output to the optional `video` input
 of **ComfyUI-LLM Gemini**. Enter your product facts and writing requirements in
 `user_prompt`, for example:

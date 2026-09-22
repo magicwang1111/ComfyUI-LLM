@@ -1,0 +1,161 @@
+{
+  "id": "0299d5c9-ea9b-41cf-b28f-95d56a0cb680",
+  "revision": 0,
+  "last_node_id": 3,
+  "last_link_id": 2,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "LoadVideo",
+      "title": "① 上传参考视频（保留原音轨）",
+      "pos": [
+        50,
+        100
+      ],
+      "size": [
+        330,
+        340
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            1
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadVideo"
+      },
+      "widgets_values": [
+        ""
+      ]
+    },
+    {
+      "id": 2,
+      "type": "ComfyUI-LLM Gemini",
+      "title": "② 修改下方产品资料 → 生成口播",
+      "pos": [
+        460,
+        100
+      ],
+      "size": [
+        570,
+        700
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 1,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": [
+            2
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "response_json",
+          "type": "STRING",
+          "links": null,
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ComfyUI-LLM Gemini"
+      },
+      "widgets_values": [
+        "gemini-3.8-flash",
+        "low",
+        "你是中文短视频口播文案编辑。先理解参考视频中的口播、音频、字幕、画面及表达结构，再根据用户提供的产品资料创作新的口播文案。参考视频只用于借鉴开头、表达节奏、卖点组织和结尾。产品事实以用户提供的资料为准，不套用参考视频的品牌、价格、功效和优惠，不虚构产品信息。听不清的内容不要猜测；无口播时参考画面和字幕。遵循用户的时长与风格要求。只输出可直接朗读的中文口播正文，不加标题、分析、分镜、Markdown或代码块。",
+        "【请替换为你的真实产品资料】\n产品名称：纯棉圆领T恤\n产品卖点：100%棉、宽松版型、黑白两色\n目标人群：日常通勤的年轻人\n价格和优惠：未提供，请不要编写\n\n【文案要求】\n参考视频的开头和表达节奏，改写成适合以上产品的口播。\n时长：约30秒\n语气：自然、口语化，有停顿感，避免夸张承诺。\n只输出最终口播正文，不需要原视频转写或分析过程。"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "PreviewAny",
+      "title": "③ 最终口播文案（可复制）",
+      "pos": [
+        1110,
+        100
+      ],
+      "size": [
+        510,
+        600
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": null,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": []
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      1,
+      "VIDEO"
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.8,
+      "offset": [
+        0,
+        0
+      ]
+    }
+  },
+  "version": 0.4
+}
