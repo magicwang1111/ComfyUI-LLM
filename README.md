@@ -24,6 +24,33 @@ long-context rates.
 The default system prompt rewrites Chinese scripts for concise short-video
 voice-over delivery. It remains editable in every node.
 
+### Gemini video to product voice-over
+
+Connect ComfyUI's **Load Video** `VIDEO` output to the optional `video` input
+of **ComfyUI-LLM Gemini**. Enter your product facts and writing requirements in
+`user_prompt`, for example:
+
+```text
+产品名称：纯棉圆领T恤
+卖点：100%棉，宽松版型，黑白两色
+目标人群：日常通勤的年轻人
+要求：参考视频的表达节奏，写一段约30秒的中文口播，只输出正文。
+```
+
+With video connected and the original default `system_prompt` unchanged, the
+node uses video-specific instructions to understand the original speech,
+subtitles and visuals, then write a new script grounded in your product facts.
+A custom `system_prompt` takes precedence. Connect `text` to a text display or
+downstream node for the final script; `response_json` remains diagnostic output.
+
+The video is serialized as MP4 with its audio and active trim preserved, and
+sent inline to Vapeur's Gemini `generateContent` endpoint. Connect an actual
+`VIDEO`, not an `IMAGE` frame batch (which does not carry audio). Temporary
+files are removed after encoding. The local serialized-video limit is 64 MiB;
+Vapeur/model request limits may be lower, and Base64 adds roughly one third to
+the upload size. Trim or compress large clips before connecting them. Video
+requests incur the provider's normal usage charges. No video is generated.
+
 ### Agent node
 
 `ComfyUI-LLM Agent Node` discovers the workflows under `skills/`, selects one

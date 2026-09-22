@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import os
+import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -23,6 +24,20 @@ CONFIG_PATH = ROOT_DIR / "config.local.json"
 DEFAULT_TIMEOUT = 600
 DEFAULT_RETRIES = 1
 DEFAULT_RETRY_DELAY = 2.0
+MAX_INLINE_VIDEO_BYTES = 64 * 1024 * 1024
+
+
+def encode_video(video):
+    # save_to preserves the VIDEO object's audio and active trim window.
+    with tempfile.TemporaryDirectory(prefix="comfyui-llm-video-") as directory:
+        path = Path(directory) / "input.mp4"
+        video.save_to(str(path), format="mp4", codec="h264")
+        size = path.stat().st_size
+        if not size:
+            raise ValueError("VIDEO input is empty.")
+        if size > MAX_INLINE_VIDEO_BYTES:
+            raise ValueError("VIDEO input is too large (local limit: 64 MiB). Trim or compress it first.")
+        return base64.b64encode(path.read_bytes()).decode("ascii")
 
 _CLAUDE_MANUAL_BUDGETS = {
     "low": 1024,

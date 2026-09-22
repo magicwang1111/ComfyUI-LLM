@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -26,6 +27,7 @@ from .llm import (
     VapeurAPIError,
     build_request,
     create_runtime_client,
+    encode_video,
     estimate_gpt_cost,
     extract_text,
     format_cost_estimate,
@@ -115,6 +117,9 @@ class _BaseLLMNode:
             user_prompt,
             image,
         )
+        return await self._generate_payload(path, payload)
+
+    async def _generate_payload(self, path, payload):
         client = create_runtime_client()
         try:
             try:
@@ -150,6 +155,36 @@ class ClaudeLLMNode(_BaseLLMNode):
 class GeminiLLMNode(_BaseLLMNode):
     PROVIDER = "gemini"
     SUPPORTS_IMAGE = True
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        inputs = super().INPUT_TYPES()
+        inputs["optional"]["video"] = ("VIDEO",)
+        return inputs
+
+    async def generate(
+        self, model, thinking_level=DEFAULT_THINKING_LEVEL,
+        system_prompt=DEFAULT_SYSTEM_PROMPT, user_prompt="", image=None, video=None,
+    ):
+        if video is None:
+            return await super().generate(model, thinking_level, system_prompt, user_prompt, image)
+        if system_prompt == DEFAULT_SYSTEM_PROMPT:
+            system_prompt = (
+                "你是中文短视频口播文案编辑。先理解参考视频的原口播、音频、字幕、画面和表达结构，"
+                "再结合用户提供的产品资料创作新的口播文案。借鉴开场、节奏、卖点组织和结尾，"
+                "产品事实以用户提供的资料为准，不将参考视频的品牌、价格、功效或优惠套用到新产品。"
+                "不虚构产品信息，不把听不清的内容当作事实；没有人声时参考画面和字幕。"
+                "遵循用户指定的时长和风格，未指定时篇幅接近参考视频口播。"
+                "只输出可以直接朗读的完整口播正文，不解释、不加标题、不输出分析或Markdown。"
+            )
+        path, payload = build_request(
+            self.PROVIDER, model, thinking_level, system_prompt, user_prompt, image,
+        )
+        video_b64 = await asyncio.to_thread(encode_video, video)
+        payload["contents"][0]["parts"].append(
+            {"inlineData": {"mimeType": "video/mp4", "data": video_b64}}
+        )
+        return await self._generate_payload(path, payload)
 
 
 class DeepSeekLLMNode(_BaseLLMNode):
