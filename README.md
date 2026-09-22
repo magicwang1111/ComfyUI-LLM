@@ -51,6 +51,46 @@ Vapeur/model request limits may be lower, and Base64 adds roughly one third to
 the upload size. Trim or compress large clips before connecting them. Video
 requests incur the provider's normal usage charges. No video is generated.
 
+Gemini availability was checked on **2026-09-22** against Vapeur's
+[model hub](https://vapeur.ai/model-square): 9 chat models and 3 image-generation
+models. All 9 chat models are listed; image-generation models are excluded.
+The default remains `gemini-3.5-flash`. Output limits (65,536 tokens) come from
+the hub; minimum thinking levels follow [Google's model-specific table](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking).
+For 3.8 Flash and 3.7 Flash, `off` maps to `low`; these models do not support
+`minimal`. Gemini 2.5 Flash uses `thinkingBudget`: `off` disables thinking with
+0 tokens; `low` / `medium` / `high` use 1,024 / 8,192 / 24,576 tokens, within
+Google's documented 1–24,576 range for enabled thinking.
+
+Each model received the same six-second MP4 with a changing color/word sequence,
+spoken English, and separate product facts, through the actual Gemini node.
+Initial tests used `medium` thinking and a reduced 512-token combined thinking
+and output cap. Three `MAX_TOKENS` answers received one corrective test with
+`low` thinking and a 4,096-token cap. The fixed 2.5 Flash node was tested with
+`off` / 4,096; 3.7 Flash received one fresh `low` / 4,096 test after HTTP 502.
+All calls used a 75-second HTTP timeout and no automatic retries.
+
+| Model | HTTP | Video/audio and product-copy result |
+| --- | --- | --- |
+| `gemini-3.8-flash` | 200 | Correct visuals, speech transcription, and copy |
+| `gemini-3.7-flash` | 502 → 200 | Fresh test: correct visuals, speech transcription, and copy |
+| `gemini-3.6-flash` | 200 | Corrective test: correct content; JSON wrapped in Markdown |
+| `gemini-3.5-flash` | 200 | Corrective test: correct content; JSON wrapped in Markdown |
+| `gemini-3.5-flash-lite` | 200 | Correct visuals, speech transcription, and copy |
+| `gemini-3.1-pro-preview` | 200 | Correct visuals, speech transcription, and copy |
+| `gemini-3.1-flash-lite` | 200 | Correct visuals, speech transcription, and copy |
+| `gemini-3-flash-preview` | 200 | Corrective test: correct content; JSON wrapped in Markdown |
+| `gemini-2.5-flash` | 400 → 200 | Fixed node: correct visuals, speech transcription, and copy; JSON wrapped in Markdown |
+
+All 9 models produced correct visual, speech, and product content, matching
+`modelVersion`, and VIDEO/AUDIO usage in at least one actual node test. Four
+returned Markdown fences despite the JSON-only instruction; their content
+passed, but strict output formatting did not. The earlier truncations came from
+the artificial 512-token test cap and do not indicate model incompatibility.
+Results reflect this short synthetic English video and the configured Vapeur
+account; long/noisy videos, all thinking settings, and the full 65,536-token
+output limit were not live-tested. The prior 3.7 Flash 502 remains evidence of
+an intermittent provider error, despite the successful fresh test.
+
 ### Agent node
 
 `ComfyUI-LLM Agent Node` discovers the workflows under `skills/`, selects one

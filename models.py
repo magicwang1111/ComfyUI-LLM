@@ -47,7 +47,16 @@ MODEL_SPECS = {
     "gemini": {
         "default": "gemini-3.5-flash",
         "models": {
+            # Vapeur model hub / Google thinking levels, checked 2026-09-22.
+            "gemini-3.8-flash": {"max_tokens": 65536, "vision": True, "supports_minimal": False},
+            "gemini-3.7-flash": {"max_tokens": 65536, "vision": True, "supports_minimal": False},
+            "gemini-3.6-flash": {"max_tokens": 65536, "vision": True, "supports_minimal": True},
             "gemini-3.5-flash": {"max_tokens": 65536, "vision": True, "supports_minimal": True},
+            "gemini-3.5-flash-lite": {
+                "max_tokens": 65536,
+                "vision": True,
+                "supports_minimal": True,
+            },
             "gemini-3.1-pro-preview": {
                 "max_tokens": 65536,
                 "vision": True,
@@ -57,6 +66,16 @@ MODEL_SPECS = {
                 "max_tokens": 65536,
                 "vision": True,
                 "supports_minimal": True,
+            },
+            "gemini-3-flash-preview": {
+                "max_tokens": 65536,
+                "vision": True,
+                "supports_minimal": True,
+            },
+            "gemini-2.5-flash": {
+                "max_tokens": 65536,
+                "vision": True,
+                "thinking_budgets": {"off": 0, "low": 1024, "medium": 8192, "high": 24576},
             },
         },
     },

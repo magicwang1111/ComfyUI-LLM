@@ -252,16 +252,19 @@ def build_gemini_payload(model, thinking_level, system_prompt, user_prompt, imag
             }
         )
 
-    if thinking_level == "off":
-        mapped_level = "minimal" if spec["supports_minimal"] else "low"
+    if "thinking_budgets" in spec:
+        thinking_config = {"thinkingBudget": spec["thinking_budgets"][thinking_level]}
     else:
         mapped_level = thinking_level
+        if thinking_level == "off":
+            mapped_level = "minimal" if spec["supports_minimal"] else "low"
+        thinking_config = {"thinkingLevel": mapped_level}
 
     payload = {
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
             "maxOutputTokens": spec["max_tokens"],
-            "thinkingConfig": {"thinkingLevel": mapped_level},
+            "thinkingConfig": thinking_config,
         },
     }
     if system_prompt.strip():

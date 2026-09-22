@@ -28,6 +28,20 @@ class PayloadTests(unittest.TestCase):
         )
         self.assertEqual(models.default_model("gpt"), "gpt-5.5")
         self.assertEqual(models.default_model("claude"), "claude-sonnet-5")
+        self.assertEqual(
+            models.model_names("gemini"),
+            [
+                "gemini-3.8-flash",
+                "gemini-3.7-flash",
+                "gemini-3.6-flash",
+                "gemini-3.5-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.1-pro-preview",
+                "gemini-3.1-flash-lite",
+                "gemini-3-flash-preview",
+                "gemini-2.5-flash",
+            ],
+        )
         self.assertEqual(models.default_model("gemini"), "gemini-3.5-flash")
         self.assertEqual(models.default_model("deepseek"), "deepseek-v4-flash-cn")
 
@@ -79,21 +93,63 @@ class PayloadTests(unittest.TestCase):
         self.assertIn("<system_instructions>\nsystem", text)
         self.assertIn("<user_request>\nrewrite", text)
 
-    def test_gemini_thinking_off_maps_to_supported_minimum(self):
-        flash = llm.build_gemini_payload(
-            "gemini-3.5-flash", "off", "", "rewrite"
-        )
-        pro = llm.build_gemini_payload(
-            "gemini-3.1-pro-preview", "off", "", "rewrite"
-        )
-        self.assertEqual(
-            flash["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-            "minimal",
-        )
-        self.assertEqual(
-            pro["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-            "low",
-        )
+    def test_gemini3_thinking_off_maps_to_supported_minimum(self):
+        minimums = {
+            "gemini-3.8-flash": "low",
+            "gemini-3.7-flash": "low",
+            "gemini-3.6-flash": "minimal",
+            "gemini-3.5-flash": "minimal",
+            "gemini-3.5-flash-lite": "minimal",
+            "gemini-3.1-pro-preview": "low",
+            "gemini-3.1-flash-lite": "minimal",
+            "gemini-3-flash-preview": "minimal",
+        }
+        for model, minimum in minimums.items():
+            with self.subTest(model=model):
+                payload = llm.build_gemini_payload(model, "off", "", "rewrite")
+                self.assertEqual(
+                    payload["generationConfig"]["thinkingConfig"],
+                    {"thinkingLevel": minimum},
+                )
+
+    def test_gemini3_thinking_levels_are_preserved(self):
+        for model in models.model_names("gemini"):
+            if model == "gemini-2.5-flash":
+                continue
+            for level in ("low", "medium", "high"):
+                with self.subTest(model=model, level=level):
+                    payload = llm.build_gemini_payload(model, level, "", "rewrite")
+                    self.assertEqual(
+                        payload["generationConfig"]["thinkingConfig"],
+                        {"thinkingLevel": level},
+                    )
+
+    def test_gemini25_flash_uses_thinking_budgets_and_off_disables_thinking(self):
+        budgets = {"off": 0, "low": 1024, "medium": 8192, "high": 24576}
+        for level, budget in budgets.items():
+            with self.subTest(level=level):
+                _, payload = llm.build_request(
+                    "gemini", "gemini-2.5-flash", level, "system", "rewrite"
+                )
+                self.assertEqual(
+                    payload["generationConfig"]["thinkingConfig"],
+                    {"thinkingBudget": budget},
+                )
+
+    def test_gemini_requests_use_provider_output_limit_and_default_thinking(self):
+        for model in models.model_names("gemini"):
+            with self.subTest(model=model):
+                path, payload = llm.build_request(
+                    "gemini", model, models.DEFAULT_THINKING_LEVEL, "", "rewrite"
+                )
+                self.assertEqual(path, f"/gemini/v1beta/models/{model}:generateContent")
+                self.assertEqual(payload["generationConfig"]["maxOutputTokens"], 65536)
+                self.assertEqual(
+                    payload["generationConfig"]["thinkingConfig"],
+                    {"thinkingBudget": 8192}
+                    if model == "gemini-2.5-flash"
+                    else {"thinkingLevel": "medium"},
+                )
 
     def test_single_image_encoding_rejects_batches(self):
         with self.assertRaisesRegex(ValueError, "Exactly one image"):
