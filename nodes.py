@@ -51,11 +51,10 @@ from .skills_runtime import SkillRegistry
 def _api_guidance(exc):
     if exc.status_code in {401, 403}:
         return ValueError(
-            f"Vapeur rejected the request with {exc.status_code}. "
-            "Check VAPEUR_API_KEY and model access."
+            f"{exc} Check VAPEUR_API_KEY, billing, and model access."
         )
     if exc.status_code == 429:
-        return ValueError("Vapeur rate limit exceeded (429). Wait and retry.")
+        return ValueError(f"{exc} Check billing/quota or request rate according to the API error above.")
     return ValueError(str(exc))
 
 

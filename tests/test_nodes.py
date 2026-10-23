@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import numpy as np
 from PIL import Image
 
@@ -128,6 +129,21 @@ class CapturingAgentWorkerClient(FakeAgentWorkerClient):
 
 
 class NodeTests(unittest.TestCase):
+    def test_api_guidance_preserves_billing_and_permission_reasons(self):
+        llm = import_module("llm")
+        for status, code, message in (
+            (403, "insufficient_balance", "Insufficient balance"),
+            (403, "account_overdue", "Forbidden"),
+            (403, "permission_denied", "Model access denied"),
+            (429, "insufficient_quota", "Quota exhausted"),
+        ):
+            with self.subTest(status=status, code=code):
+                response = httpx.Response(status, json={"error": {"code": code, "message": message}})
+                error = llm.VapeurAPIError(status, llm._error_message(response))
+                displayed = str(nodes._api_guidance(error))
+                self.assertIn(code, displayed)
+                self.assertIn(message, displayed)
+
     def test_progress_events_are_sent_and_sensitive_details_are_filtered(self):
         sent = []
         prompt_server = SimpleNamespace(

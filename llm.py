@@ -448,7 +448,9 @@ def _error_message(response):
         payload = response.json()
         error = payload.get("error", payload)
         if isinstance(error, dict):
-            return str(error.get("message") or error.get("type") or error)[:1000]
+            message = str(error.get("message") or error.get("type") or error)
+            code = error.get("code") or error.get("type")
+            return (f"[{code}] {message}" if code else message)[:1000]
         return str(error)[:1000]
     except (ValueError, AttributeError):
         return response.text[:1000] or response.reason_phrase
