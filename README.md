@@ -8,9 +8,10 @@ ComfyUI custom nodes for text generation through [VapeurAI](https://vapeur.ai/).
 - `ComfyUI-LLM Claude`
 - `ComfyUI-LLM Gemini`
 - `ComfyUI-LLM DeepSeek`
+- `ComfyUI-LLM Qwen`
 - `ComfyUI-LLM Agent Node`
 
-GPT, Claude, and Gemini accept one optional ComfyUI `IMAGE` for image
+GPT, Claude, Gemini, and Qwen accept one optional ComfyUI `IMAGE` for image
 understanding. DeepSeek is text-only. The provider nodes return:
 
 - `text`: final model text, excluding thinking blocks
@@ -23,6 +24,40 @@ long-context rates.
 
 The default system prompt rewrites Chinese scripts for concise short-video
 voice-over delivery. It remains editable in every node.
+
+### Qwen (DashScope)
+
+Restart ComfyUI and add `ComfyUI-LLM Qwen`, select `qwen3.7-max`, and enter
+`user_prompt`. The node reuses the existing Vapeur API key and calls
+`/qwen/api/v1/services/aigc/multimodal-generation/generation` with DashScope's
+native `input.messages` format and `parameters.result_format: message`.
+With an optional `IMAGE` connected, it uses `/v1/chat/completions` and
+`image_url` instead: the native route did not reliably forward inline images
+in live tests. Model/channel image support still depends on Vapeur.
+It supports both string and text-block response content. Thinking controls
+are omitted because the supplied API specification does not define them;
+sampling and output length use server defaults.
+
+The dropdown includes all **16 Qwen chat models** listed in Vapeur's
+[model hub](https://vapeur.ai/model-square) on **2026-11-03**:
+
+| Series | Models |
+| --- | --- |
+| 3.8 | `qwen3.8-max`, `qwen3.8-flash`, `qwen3.8-max-glb` |
+| 3.7 | `qwen3.7-max`, `qwen3.7-plus`, `qwen3.7-flash`, `qwen3.7-max-glb` |
+| 3.6 | `qwen3.6-plus`, `qwen3.6-flash`, `qwen3.6-plus-glb`, `qwen3.6-flash-glb` |
+| 3.5 | `qwen3.5-plus`, `qwen3.5-flash`, `qwen3.5-plus-glb`, `qwen3.5-flash-glb` |
+| Plus | `qwen-plus-latest` (text only; leave `image` disconnected) |
+
+Image-generation models are excluded. This is a checked-in model list, not an
+automatic catalog refresh.
+
+All 16 models returned `OK` in a live text smoke test on 2026-11-03 using
+the native route. Image tests through the chat route correctly identified a
+solid red image with `qwen3.8-flash` and `qwen3.7-flash`; `qwen3.7-max` and
+`qwen3.7-max-glb` returned upstream HTTP 400 image-parameter errors. Use the
+tested Flash models for images. Other chat-route vision models have not been
+live-tested; text smoke tests do not establish long-context or answer quality.
 
 ### Gemini video to product voice-over
 
@@ -191,6 +226,13 @@ through Vapeur and defaults to 1K output. A legacy
 generic `api_key` is accepted only when `api_provider` is explicitly
 `vapeur`. The LLM nodes always call `https://api.vapeur.ai`; legacy Azure or
 relay `base_url` values are ignored.
+
+Provider LLM nodes retry connection/time-out failures and HTTP 502/503/504
+using `request_retries` (additional attempts) and `retry_delay` (seconds).
+The default retries once after 2 seconds; set `request_retries` to 0 to disable
+retries. HTTP 400/401/403/429 errors are returned immediately. If the upstream
+service remains unavailable, the node reports the original error and attempt
+count; retrying cannot repair an unavailable provider channel.
 
 Relative `input_path` and `output_dir` values resolve inside ComfyUI's input
 and output roots. The Agent node follows any account prefix applied through

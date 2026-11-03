@@ -86,6 +86,28 @@ MODEL_SPECS = {
             "deepseek-v4-flash-cn": {"max_tokens": 131072, "vision": False},
         },
     },
+    "qwen": {
+        "default": "qwen3.7-max",
+        "models": {
+            # All Qwen chat models in Vapeur's model hub, checked 2026-11-03.
+            "qwen3.8-max": {"vision": True},
+            "qwen3.8-flash": {"vision": True},
+            "qwen3.8-max-glb": {"vision": True},
+            "qwen3.7-max": {"vision": True},
+            "qwen3.7-plus": {"vision": True},
+            "qwen3.7-flash": {"vision": True},
+            "qwen3.7-max-glb": {"vision": True},
+            "qwen3.6-plus": {"vision": True},
+            "qwen3.6-flash": {"vision": True},
+            "qwen3.6-plus-glb": {"vision": True},
+            "qwen3.6-flash-glb": {"vision": True},
+            "qwen3.5-plus": {"vision": True},
+            "qwen3.5-flash": {"vision": True},
+            "qwen3.5-plus-glb": {"vision": True},
+            "qwen3.5-flash-glb": {"vision": True},
+            "qwen-plus-latest": {"vision": False},
+        },
+    },
 }
 
 # Vapeur model-square prices, checked 2026-07-31.

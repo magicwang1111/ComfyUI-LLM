@@ -24,6 +24,7 @@ from .image_tools import (
     tensor_to_pil_batch,
 )
 from .llm import (
+    RETRYABLE_HTTP_STATUS_CODES,
     VapeurAPIError,
     build_request,
     create_runtime_client,
@@ -49,6 +50,11 @@ from .skills_runtime import SkillRegistry
 
 
 def _api_guidance(exc):
+    if exc.status_code in RETRYABLE_HTTP_STATUS_CODES:
+        return ValueError(
+            f"{exc} Vapeur 上游服务暂时不可用，已达到配置的请求次数。"
+            "请稍后重试，或选择其他可用模型。"
+        )
     if exc.status_code in {401, 403}:
         return ValueError(
             f"{exc} Check VAPEUR_API_KEY, billing, and model access."
@@ -188,6 +194,17 @@ class GeminiLLMNode(_BaseLLMNode):
 
 class DeepSeekLLMNode(_BaseLLMNode):
     PROVIDER = "deepseek"
+
+
+class QwenLLMNode(_BaseLLMNode):
+    PROVIDER = "qwen"
+    SUPPORTS_IMAGE = True
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        inputs = super().INPUT_TYPES()
+        del inputs["required"]["thinking_level"]
+        return inputs
 
 
 AGENT_IMAGE_MODELS = ["gpt-image-2", "bananapro"]
@@ -495,6 +512,7 @@ NODE_CLASS_MAPPINGS = {
     f"{NODE_PREFIX} Claude": ClaudeLLMNode,
     f"{NODE_PREFIX} Gemini": GeminiLLMNode,
     f"{NODE_PREFIX} DeepSeek": DeepSeekLLMNode,
+    f"{NODE_PREFIX} Qwen": QwenLLMNode,
     f"{NODE_PREFIX} Agent SDK": AgentSDKNode,
 }
 

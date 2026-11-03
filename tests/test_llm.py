@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import numpy as np
@@ -231,6 +231,105 @@ class PayloadTests(unittest.TestCase):
         )
 
 
+class QwenTests(unittest.TestCase):
+    def test_all_hub_chat_models_and_vision_capabilities(self):
+        expected = {
+            "qwen3.8-max", "qwen3.8-flash", "qwen3.8-max-glb",
+            "qwen3.7-max", "qwen3.7-plus", "qwen3.7-flash", "qwen3.7-max-glb",
+            "qwen3.6-plus", "qwen3.6-flash", "qwen3.6-plus-glb", "qwen3.6-flash-glb",
+            "qwen3.5-plus", "qwen3.5-flash", "qwen3.5-plus-glb", "qwen3.5-flash-glb",
+            "qwen-plus-latest",
+        }
+        self.assertEqual(set(models.model_names("qwen")), expected)
+        for model in expected:
+            with self.subTest(model=model):
+                payload = llm.build_qwen_payload(model, "", "hello")
+                self.assertEqual(payload["model"], model)
+                image = np.zeros((1, 2, 2, 3), dtype=np.float32)
+                if model == "qwen-plus-latest":
+                    with self.assertRaisesRegex(ValueError, "does not support image"):
+                        llm.build_request("qwen", model, "medium", "", "hello", image)
+                else:
+                    path, payload = llm.build_request("qwen", model, "medium", "", "hello", image)
+                    self.assertEqual(path, "/v1/chat/completions")
+                    self.assertIn("image_url", payload["messages"][0]["content"][1])
+
+    def test_text_and_image_requests_use_their_supported_routes(self):
+        for system in ("", " system "):
+            for image in (None, np.zeros((1, 2, 2, 3), dtype=np.float32)):
+                with self.subTest(system=system, has_image=image is not None):
+                    path, payload = llm.build_request(
+                        "qwen", "qwen3.7-max", "medium", system, "中文问题", image,
+                    )
+                    if image is not None:
+                        self.assertEqual(path, "/v1/chat/completions")
+                        self.assertEqual(payload["messages"][-1]["content"][0], {"type": "text", "text": "中文问题"})
+                        self.assertTrue(payload["messages"][-1]["content"][1]["image_url"]["url"].startswith("data:image/png;base64,iVBOR"))
+                        self.assertFalse(payload["stream"])
+                        continue
+                    self.assertEqual(path, "/qwen/api/v1/services/aigc/multimodal-generation/generation")
+                    self.assertEqual(payload["model"], "qwen3.7-max")
+                    self.assertEqual(set(payload), {"model", "input", "parameters"})
+                    self.assertEqual(payload["parameters"], {"result_format": "message"})
+                    messages = payload["input"]["messages"]
+                    self.assertEqual(len(messages), 2 if system else 1)
+                    if system:
+                        self.assertEqual(messages[0], {"role": "system", "content": [{"text": "system"}]})
+                    self.assertEqual(messages[-1]["role"], "user")
+                    content = messages[-1]["content"]
+                    self.assertEqual(content[0], {"text": "中文问题"})
+                    self.assertEqual(len(content), 1)
+
+    def test_extract_native_string_and_block_content(self):
+        for content in ("最终答案", [{"text": "最终"}, {"text": "答案"}, {"image": "ignored"}]):
+            with self.subTest(content=content):
+                response = {"output": {"choices": [{"message": {
+                    "content": content, "reasoning_content": "hidden",
+                }}]}}
+                self.assertEqual(llm.extract_text("qwen", response), "最终答案")
+                self.assertEqual(llm.extract_text("qwen", response["output"]), "最终答案")
+
+    def test_empty_and_malformed_responses_fail(self):
+        for response in ({}, {"output": {"choices": []}},
+                         {"output": {"choices": [{"message": {"content": ""}}]}},
+                         {"output": {"choices": [{"message": {"content": None}}]}}):
+            with self.subTest(response=response), self.assertRaisesRegex(ValueError, "qwen response"):
+                llm.extract_text("qwen", response)
+
+    def test_native_http_request_and_api_error(self):
+        async def run(status):
+            async def handler(request):
+                self.assertEqual(str(request.url), "https://api.vapeur.ai/qwen/api/v1/services/aigc/multimodal-generation/generation")
+                self.assertEqual(request.headers["authorization"], "Bearer secret")
+                self.assertIn("application/json", request.headers["content-type"])
+                self.assertNotIn("x-dashscope-sse", request.headers)
+                self.assertEqual(json.loads(request.content)["input"]["messages"][0]["content"], [{"text": "中文"}])
+                if status == 400:
+                    return httpx.Response(status, json={"code": "InvalidParameter", "message": "bad model"})
+                return httpx.Response(status, json={
+                    "output": {"choices": [{"message": {"content": "ok"}}]},
+                    "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+                    "requestId": "test-id",
+                })
+
+            client = llm.VapeurLLMClient("secret", transport=httpx.MockTransport(handler))
+            try:
+                path, payload = llm.build_request("qwen", "qwen3.7-max", "medium", "", "中文")
+                if status == 400:
+                    with self.assertRaisesRegex(llm.VapeurAPIError, "InvalidParameter.*bad model"):
+                        await client.generate("qwen", path, payload)
+                else:
+                    response = await client.generate("qwen", path, payload)
+                    self.assertEqual(llm.extract_text("qwen", response), "ok")
+                    self.assertEqual(json.loads(llm.response_json(response))["usage"]["totalTokens"], 2)
+            finally:
+                await client.close()
+
+        for status in (200, 400):
+            with self.subTest(status=status):
+                asyncio.run(run(status))
+
+
 class ConfigTests(unittest.TestCase):
     def test_vapeur_specific_key_wins_over_legacy_key(self):
         with patch.object(
@@ -256,6 +355,102 @@ class ConfigTests(unittest.TestCase):
 
 
 class TransportTests(unittest.TestCase):
+    def test_temporary_http_error_retries_same_request_and_recovers(self):
+        async def run(status):
+            seen = []
+
+            async def handler(request):
+                seen.append(request)
+                if len(seen) == 1:
+                    return httpx.Response(status, json={"code": 4007, "message": "", "data": None})
+                return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+            client = llm.VapeurLLMClient("secret", max_retries=1, retry_delay=2, transport=httpx.MockTransport(handler))
+            try:
+                with patch.object(llm.asyncio, "sleep", new_callable=AsyncMock) as sleep:
+                    result = await client.generate("qwen", "/v1/chat/completions", {"model": "qwen3.8-flash", "messages": []})
+                    sleep.assert_awaited_once_with(2)
+                self.assertEqual(llm.extract_text("qwen", result), "ok")
+                self.assertEqual(len(seen), 2)
+                self.assertEqual(seen[0].content, seen[1].content)
+                self.assertEqual(seen[0].url, seen[1].url)
+                self.assertEqual(seen[1].headers["authorization"], "Bearer secret")
+            finally:
+                await client.close()
+
+        for status in (502, 503, 504):
+            with self.subTest(status=status):
+                asyncio.run(run(status))
+
+    def test_http_retry_limit_and_disabled_retries(self):
+        async def run(retries):
+            calls = 0
+
+            async def handler(request):
+                nonlocal calls
+                calls += 1
+                return httpx.Response(503, json={"code": 4007, "message": "", "data": None})
+
+            client = llm.VapeurLLMClient("secret", max_retries=retries, retry_delay=0, transport=httpx.MockTransport(handler))
+            try:
+                with self.assertRaises(llm.VapeurAPIError) as raised:
+                    await client.generate("qwen", "/v1/chat/completions", {})
+                self.assertEqual(calls, retries + 1)
+                self.assertEqual(raised.exception.status_code, 503)
+                self.assertIn("4007", str(raised.exception))
+                self.assertIn(f"after {retries + 1} attempt(s)", str(raised.exception))
+            finally:
+                await client.close()
+
+        for retries in (0, 2):
+            with self.subTest(retries=retries):
+                asyncio.run(run(retries))
+
+    def test_client_errors_are_not_retried(self):
+        async def run(status):
+            calls = 0
+
+            async def handler(request):
+                nonlocal calls
+                calls += 1
+                return httpx.Response(status, json={"error": {"message": "request rejected"}})
+
+            client = llm.VapeurLLMClient("secret", max_retries=2, retry_delay=0, transport=httpx.MockTransport(handler))
+            try:
+                with self.assertRaises(llm.VapeurAPIError):
+                    await client.generate("qwen", "/v1/chat/completions", {})
+                self.assertEqual(calls, 1)
+            finally:
+                await client.close()
+
+        for status in (400, 401, 403, 429):
+            with self.subTest(status=status):
+                asyncio.run(run(status))
+
+    def test_http_and_transport_errors_share_retry_budget(self):
+        async def run():
+            calls = 0
+
+            async def handler(request):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    return httpx.Response(503, json={"message": "unavailable"})
+                if calls == 2:
+                    raise httpx.ReadTimeout("timeout", request=request)
+                return httpx.Response(200, json={"ok": True})
+
+            client = llm.VapeurLLMClient("secret", max_retries=2, retry_delay=2, transport=httpx.MockTransport(handler))
+            try:
+                with patch.object(llm.asyncio, "sleep", new_callable=AsyncMock) as sleep:
+                    self.assertEqual(await client.generate("qwen", "/v1/chat/completions", {}), {"ok": True})
+                    self.assertEqual(sleep.await_count, 2)
+                self.assertEqual(calls, 3)
+            finally:
+                await client.close()
+
+        asyncio.run(run())
+
     def test_provider_auth_headers_and_routes(self):
         seen = []
 

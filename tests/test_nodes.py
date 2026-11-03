@@ -27,6 +27,8 @@ class FakeClient:
         self.calls.append((provider, path, payload))
         if provider == "claude":
             return {"content": [{"type": "text", "text": "final"}]}
+        if provider == "qwen":
+            return {"output": {"choices": [{"message": {"content": "final"}}]}}
         if provider == "gemini":
             return {
                 "candidates": [
@@ -129,6 +131,33 @@ class CapturingAgentWorkerClient(FakeAgentWorkerClient):
 
 
 class NodeTests(unittest.TestCase):
+    def test_qwen_exhausted_service_retries_show_guidance_and_close_client(self):
+        llm = import_module("llm")
+        calls = []
+
+        async def handler(request):
+            calls.append(request)
+            return httpx.Response(503, json={"code": 4007, "message": "", "data": None})
+
+        async def run():
+            client = llm.VapeurLLMClient("secret", max_retries=1, retry_delay=0, transport=httpx.MockTransport(handler))
+            with patch.object(nodes, "create_runtime_client", return_value=client):
+                with self.assertRaises(ValueError) as raised:
+                    await nodes.QwenLLMNode().generate(
+                        model="qwen3.8-flash", system_prompt="", user_prompt="describe",
+                        image=np.zeros((1, 2, 2, 3), dtype=np.float32),
+                    )
+            message = str(raised.exception)
+            self.assertIn("503", message)
+            self.assertIn("4007", message)
+            self.assertIn("after 2 attempt(s)", message)
+            self.assertIn("请稍后重试", message)
+            self.assertNotIn("secret", message)
+            self.assertEqual(len(calls), 2)
+            self.assertTrue(client._client.is_closed)
+
+        asyncio.run(run())
+
     def test_api_guidance_preserves_billing_and_permission_reasons(self):
         llm = import_module("llm")
         for status, code, message in (
@@ -178,6 +207,7 @@ class NodeTests(unittest.TestCase):
                 "ComfyUI-LLM Claude",
                 "ComfyUI-LLM Gemini",
                 "ComfyUI-LLM DeepSeek",
+                "ComfyUI-LLM Qwen",
                 "ComfyUI-LLM Agent SDK",
             },
         )
@@ -228,9 +258,27 @@ class NodeTests(unittest.TestCase):
             nodes.GPTLLMNode,
             nodes.ClaudeLLMNode,
             nodes.GeminiLLMNode,
+            nodes.QwenLLMNode,
         ):
             self.assertIn("image", cls.INPUT_TYPES()["optional"])
         self.assertNotIn("optional", nodes.DeepSeekLLMNode.INPUT_TYPES())
+
+    def test_qwen_node_generates_without_thinking_input(self):
+        inputs = nodes.QwenLLMNode.INPUT_TYPES()
+        self.assertNotIn("thinking_level", inputs["required"])
+        self.assertEqual(len(inputs["required"]["model"][0]), 16)
+        self.assertEqual(inputs["required"]["model"][1]["default"], "qwen3.7-max")
+        client = FakeClient()
+        with patch.object(nodes, "create_runtime_client", return_value=client):
+            text, raw = asyncio.run(nodes.QwenLLMNode().generate(
+                model="qwen3.7-max", system_prompt="system", user_prompt="rewrite",
+                image=np.zeros((1, 2, 2, 3), dtype=np.float32),
+            ))
+        self.assertEqual(text, "final")
+        self.assertIn("output", json.loads(raw))
+        self.assertEqual(client.calls[0][0], "qwen")
+        self.assertEqual(client.calls[0][1], "/v1/chat/completions")
+        self.assertTrue(client.closed)
 
     def test_chinese_skill_labels_map_to_runtime_names(self):
         self.assertEqual(nodes._skill_value("批量AI换装"), "batch-ai-tryon")

@@ -2,6 +2,7 @@ import asyncio
 import base64
 import io
 import json
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -24,6 +25,8 @@ CONFIG_PATH = ROOT_DIR / "config.local.json"
 DEFAULT_TIMEOUT = 600
 DEFAULT_RETRIES = 1
 DEFAULT_RETRY_DELAY = 2.0
+RETRYABLE_HTTP_STATUS_CODES = {502, 503, 504}
+logger = logging.getLogger(__name__)
 MAX_INLINE_VIDEO_BYTES = 64 * 1024 * 1024
 
 
@@ -272,6 +275,20 @@ def build_gemini_payload(model, thinking_level, system_prompt, user_prompt, imag
     return payload
 
 
+def build_qwen_payload(model, system_prompt, user_prompt):
+    validate_common("qwen", model, DEFAULT_THINKING_LEVEL, system_prompt, user_prompt)
+    messages = []
+    if system_prompt.strip():
+        messages.append({"role": "system", "content": [{"text": system_prompt.strip()}]})
+    content = [{"text": user_prompt}]
+    messages.append({"role": "user", "content": content})
+    return {
+        "model": model,
+        "input": {"messages": messages},
+        "parameters": {"result_format": "message"},
+    }
+
+
 def build_request(provider, model, thinking_level, system_prompt, user_prompt, image=None):
     image_b64 = encode_single_image(image) if image is not None else None
     if provider == "gpt":
@@ -293,6 +310,18 @@ def build_request(provider, model, thinking_level, system_prompt, user_prompt, i
         return path, build_gemini_payload(
             model, thinking_level, system_prompt, user_prompt, image_b64
         )
+    if provider == "qwen":
+        validate_common(provider, model, thinking_level, system_prompt, user_prompt, image)
+        if image_b64:
+            # Vapeur's native route currently drops inline images; use chat for vision.
+            return "/v1/chat/completions", {
+                "model": model,
+                "messages": _openai_messages(system_prompt, user_prompt, image_b64),
+                "stream": False,
+            }
+        return "/qwen/api/v1/services/aigc/multimodal-generation/generation", build_qwen_payload(
+            model, system_prompt, user_prompt
+        )
     raise ValueError(f"Unsupported provider: {provider}")
 
 
@@ -308,6 +337,11 @@ def extract_text(provider, response):
                     for part in content
                     if isinstance(part, dict) and part.get("type") in {"text", "output_text"}
                 )
+        elif provider == "qwen":
+            content = response.get("output", response)["choices"][0]["message"]["content"]
+            text = content if isinstance(content, str) else "".join(
+                part.get("text", "") for part in content if isinstance(part, dict)
+            )
         elif provider == "claude":
             text = "".join(
                 part.get("text", "")
@@ -475,7 +509,7 @@ class VapeurLLMClient:
         )
 
     def _headers(self, provider):
-        if provider in {"gpt", "deepseek"}:
+        if provider in {"gpt", "deepseek", "qwen"}:
             return {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json; charset=utf-8",
@@ -510,16 +544,25 @@ class VapeurLLMClient:
                 if response.status_code >= 400:
                     raise VapeurAPIError(response.status_code, _error_message(response))
                 return response.json()
-            except VapeurAPIError:
-                raise
+            except VapeurAPIError as exc:
+                if exc.status_code not in RETRYABLE_HTTP_STATUS_CODES:
+                    raise
+                if attempt + 1 >= attempts:
+                    raise VapeurAPIError(
+                        exc.status_code, f"{exc.message} (after {attempts} attempt(s))"
+                    ) from exc
+                logger.warning(
+                    "Vapeur %s HTTP %s; retry %s/%s in %ss",
+                    provider, exc.status_code, attempt + 1, self.max_retries, self.retry_delay,
+                )
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 if attempt + 1 >= attempts:
                     raise ValueError(
                         f"Vapeur {provider} request failed after {attempts} attempt(s): "
                         f"{type(exc).__name__}: {exc}"
                     ) from exc
-                if self.retry_delay:
-                    await asyncio.sleep(self.retry_delay)
+            if self.retry_delay:
+                await asyncio.sleep(self.retry_delay)
         raise RuntimeError("unreachable")
 
     async def close(self):
