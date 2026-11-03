@@ -27,6 +27,7 @@ from .llm import (
     RETRYABLE_HTTP_STATUS_CODES,
     VapeurAPIError,
     build_request,
+    build_qwen_video_payload,
     create_runtime_client,
     encode_video,
     estimate_gpt_cost,
@@ -35,6 +36,7 @@ from .llm import (
     load_config,
     response_json,
     resolve_runtime_config,
+    sample_qwen_video,
     validate_common,
 )
 from .models import (
@@ -204,7 +206,32 @@ class QwenLLMNode(_BaseLLMNode):
     def INPUT_TYPES(cls):
         inputs = super().INPUT_TYPES()
         del inputs["required"]["thinking_level"]
+        inputs["optional"]["video"] = ("VIDEO",)
+        inputs["optional"]["video_frames"] = ("INT", {
+            "default": 16, "min": 1, "max": 64,
+            "tooltip": "均匀抽取的视频画面数量，至少2帧时包含首尾帧。增加帧数可观察更多细节，也会增加请求量。视频分析不包含音轨。",
+        })
         return inputs
+
+    async def generate(
+        self, model, thinking_level=DEFAULT_THINKING_LEVEL,
+        system_prompt=DEFAULT_SYSTEM_PROMPT, user_prompt="", image=None,
+        video=None, video_frames=16,
+    ):
+        if video is None:
+            return await super().generate(model, thinking_level, system_prompt, user_prompt, image)
+        spec = validate_common(self.PROVIDER, model, thinking_level, system_prompt, user_prompt, image)
+        if not spec["vision"]:
+            raise ValueError(f"{model} does not support video frame input.")
+        if system_prompt == DEFAULT_SYSTEM_PROMPT:
+            system_prompt = (
+                "你是视频画面分析助手。根据用户要求分析按时间排列的视频画面，"
+                "客观描述人物、服装、场景、构图和可见动作；结合时间戳说明变化。"
+                "不能从抽样画面推断未提供的语音内容，不编造画面中无法确认的信息。"
+            )
+        frames = await asyncio.to_thread(sample_qwen_video, video, video_frames)
+        payload = build_qwen_video_payload(model, system_prompt, user_prompt, frames, image)
+        return await self._generate_payload("/v1/chat/completions", payload)
 
 
 AGENT_IMAGE_MODELS = ["gpt-image-2", "bananapro"]
