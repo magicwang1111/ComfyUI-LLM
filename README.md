@@ -47,7 +47,7 @@ The dropdown includes all **16 Qwen chat models** listed in Vapeur's
 | 3.7 | `qwen3.7-max`, `qwen3.7-plus`, `qwen3.7-flash`, `qwen3.7-max-glb` |
 | 3.6 | `qwen3.6-plus`, `qwen3.6-flash`, `qwen3.6-plus-glb`, `qwen3.6-flash-glb` |
 | 3.5 | `qwen3.5-plus`, `qwen3.5-flash`, `qwen3.5-plus-glb`, `qwen3.5-flash-glb` |
-| Plus | `qwen-plus-latest` (text only; leave `image` and `video` disconnected) |
+| Plus | `qwen-plus-latest` (text only; leave `image` disconnected) |
 
 Image-generation models are excluded. This is a checked-in model list, not an
 automatic catalog refresh.
@@ -57,36 +57,7 @@ the native route. Image tests through the chat route correctly identified a
 solid red image with `qwen3.8-flash` and `qwen3.7-flash`; `qwen3.7-max` and
 `qwen3.7-max-glb` returned upstream HTTP 400 image-parameter errors. Use the
 tested Flash models for images. Other chat-route vision models have not been
-live-tested except for the video-frame test below; text smoke tests do not
-establish long-context or answer quality.
-
-### Qwen video analysis
-
-Import [the Qwen video example](examples/qwen_video_analysis.json), upload a
-clip in **Load Video**, and edit `user_prompt`. Connect its `VIDEO` output to
-the Qwen node's optional `video` input. Restart ComfyUI after updating to expose
-the new input. Existing text and image workflows keep their behavior.
-
-The node samples frames locally in chronological order and sends PNG images
-with timestamps through `/v1/chat/completions`. `video_frames` defaults to 16;
-two or more samples include the first and last frame. Active trim/crop is
-preserved, and timestamps are relative to the selected clip. An optional
-`image` is sent separately as a reference image. The original default system
-prompt switches to visual video analysis when video is connected; custom
-system prompts are preserved.
-
-**Audio is not included.** Sparse samples can miss fast actions; trim the clip
-or increase `video_frames` for more detail. More frames increase request size
-and model usage. The MP4 stays local; only sampled images and prompts are sent.
-This does not generate video.
-
-On 2026-11-03, Vapeur's chat `video_url` and native DashScope inline-video
-routes returned responses saying no visible input was received. Sending three
-timestamped frames to `qwen3.8-max` instead correctly identified the colors
-and labels of all three scenes in a six-second synthetic clip. This checks
-frame understanding on that model/channel, not native MP4 or audio support.
-Other models and long videos have not been verified for this path. Upstream
-503 errors can still occur.
+live-tested; text smoke tests do not establish long-context or answer quality.
 
 ### Gemini video to product voice-over
 
