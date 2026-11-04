@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
+import av
 import httpx
 import numpy as np
 from PIL import Image
@@ -41,6 +42,73 @@ def encode_video(video):
         if size > MAX_INLINE_VIDEO_BYTES:
             raise ValueError("VIDEO input is too large (local limit: 64 MiB). Trim or compress it first.")
         return base64.b64encode(path.read_bytes()).decode("ascii")
+
+
+def sample_qwen_video(video, frame_count=16):
+    # Retained for future use; QwenLLMNode exposes no video input and does not call this.
+    if frame_count < 1:
+        raise ValueError("video_frames must be positive.")
+    with tempfile.TemporaryDirectory(prefix="comfyui-llm-qwen-video-") as directory:
+        path = Path(directory) / "input.mp4"
+        # Materialize the active trim/crop before sampling, without loading all frames into RAM.
+        video.save_to(str(path), format="mp4", codec="h264")
+        with av.open(str(path)) as container:
+            if not container.streams.video:
+                raise ValueError("VIDEO input contains no video stream.")
+            stream = container.streams.video[0]
+            total = stream.frames
+            if not total:
+                total = sum(1 for _ in container.decode(stream))
+                container.seek(0)
+            if not total:
+                raise ValueError("VIDEO input contains no frames.")
+            count = min(frame_count, total)
+            indices = {round(i * (total - 1) / max(1, count - 1)) for i in range(count)}
+            frames = []
+            start = float((stream.start_time or 0) * stream.time_base)
+            for index, frame in enumerate(container.decode(stream)):
+                if index not in indices:
+                    continue
+                timestamp = float(frame.time) - start
+                image = frame.to_image()
+                if frame.rotation:
+                    image = image.rotate(frame.rotation, expand=True)
+                buffer = io.BytesIO()
+                image.save(buffer, format="PNG")
+                frames.append((timestamp, base64.b64encode(buffer.getvalue()).decode("ascii")))
+                if len(frames) == count:
+                    break
+            if not frames:
+                raise ValueError("VIDEO input contains no decodable sampled frames.")
+            return frames
+
+
+def build_qwen_video_payload(model, system_prompt, user_prompt, frames, image=None):
+    spec = validate_common("qwen", model, DEFAULT_THINKING_LEVEL, system_prompt, user_prompt, image)
+    if not spec["vision"]:
+        raise ValueError(f"{model} does not support video frame input.")
+    messages = _openai_messages(system_prompt, user_prompt)
+    content = [
+        {"type": "text", "text": user_prompt},
+        {"type": "text", "text": (
+            "以下是视频按时间顺序抽取的画面，时间从输入视频的有效片段起点计算。"
+            "这里只提供抽样画面，不含音轨；不能据此转写语音、判断音色或确认画面之间未采样的动作。"
+            "请根据可见内容回答，缺少的信息明确说明。"
+        )},
+    ]
+    for timestamp, image_b64 in frames:
+        content.extend([
+            {"type": "text", "text": f"视频画面：{timestamp:.3f} 秒"},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+        ])
+    if image is not None:
+        content.extend([
+            {"type": "text", "text": "以下是单独提供的参考图片，不属于上述视频画面。"},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encode_single_image(image)}"}},
+        ])
+    messages[-1]["content"] = content
+    return {"model": model, "messages": messages, "stream": False}
+
 
 _CLAUDE_MANUAL_BUDGETS = {
     "low": 1024,

@@ -22,6 +22,18 @@ class VideoTests(unittest.TestCase):
     def test_only_gemini_exposes_video(self):
         self.assertEqual(nodes.GeminiLLMNode.INPUT_TYPES()["optional"]["video"], ("VIDEO",))
         self.assertNotIn("video", nodes.GPTLLMNode.INPUT_TYPES()["optional"])
+        self.assertNotIn("video", nodes.QwenLLMNode.INPUT_TYPES()["optional"])
+        self.assertNotIn("video_frames", nodes.QwenLLMNode.INPUT_TYPES()["optional"])
+
+    def test_qwen_does_not_sample_video(self):
+        client = FakeClient()
+        with patch.object(llm, "sample_qwen_video", side_effect=AssertionError("Video sampling disabled")) as sample:
+            with patch.object(nodes, "create_runtime_client", return_value=client):
+                text, _ = asyncio.run(nodes.QwenLLMNode().generate(
+                    model="qwen3.8-max", user_prompt="describe",
+                ))
+            sample.assert_not_called()
+        self.assertEqual(text, "final")
 
     def test_video_and_product_reach_gemini_and_return_text(self):
         client = FakeClient()

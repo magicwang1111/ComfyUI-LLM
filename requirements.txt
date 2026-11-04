@@ -1,4 +1,5 @@
 httpx
+av
 numpy
 pillow
 alibabacloud-oss-v2>=1,<2

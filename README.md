@@ -27,6 +27,10 @@ voice-over delivery. It remains editable in every node.
 
 ### Qwen (DashScope)
 
+Qwen video frame-sampling helpers are retained in the source but disabled in
+the node: there is no `video` or `video_frames` input, and node execution does
+not decode or sample video. Gemini video input remains available.
+
 Restart ComfyUI and add `ComfyUI-LLM Qwen`, select `qwen3.7-max`, and enter
 `user_prompt`. The node reuses the existing Vapeur API key and calls
 `/qwen/api/v1/services/aigc/multimodal-generation/generation` with DashScope's
