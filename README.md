@@ -25,6 +25,42 @@ long-context rates.
 The default system prompt rewrites Chinese scripts for concise short-video
 voice-over delivery. It remains editable in every node.
 
+### GPT model list
+
+The dropdown includes all 30 GPT text models in Vapeur's
+[model hub](https://vapeur.ai/model-square), checked **2026-11-04**. The default
+remains `gpt-5.5`. Restart ComfyUI and refresh the browser after updating.
+
+| Series | Models |
+| --- | --- |
+| 6.1 | `gpt-6.1-terra`, `gpt-6.1-sol` |
+| 6 | `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna` |
+| 5.6 | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` |
+| Latest chat | `gpt-chat-latest` |
+| 5.5 / 5.4 | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.4-mini`, `gpt-5.4-nano` |
+| 5.3 / 5.2 | `gpt-5.3-codex`, `gpt-5.2`, `gpt-5.2-codex` |
+| 5.1 | `gpt-5.1`, `gpt-5.1-codex`, `gpt-5.1-codex-mini`, `gpt-5.1-codex-max` |
+| 5 | `gpt-5`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5-pro`, `gpt-5-codex` |
+| 4 | `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-4o` |
+
+Codex and Pro models use `/v1/responses`; other models use Chat Completions.
+GPT-4 and the latest-chat alias omit reasoning controls. Models that cannot
+disable reasoning use their minimum supported level; GPT-5 Pro always uses
+`high`. The original GPT-5 / mini / nano map `off` to `minimal`.
+
+GPT-6.1 Sol uses the official [128,000-token output limit](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
+correcting the hub's 1,280,000 entry. Prices for all listed models, including
+the changed GPT-5.6 rates, come from the same Vapeur catalog snapshot. Cost
+estimates cover input, cached input and output tokens; they exclude cache-write
+charges, service-tier adjustments and account discounts. Image-generation
+models use a different API and are not included in this text node.
+
+Live text checks on 2026-11-04 succeeded for 29 of the 30 models, including
+all five GPT-6/6.1 entries and all Codex/Pro entries. `gpt-5.6-sol` timed out
+after 45 seconds in this check. These short text requests do not establish
+image quality, long-context behavior or every reasoning setting. The Agent
+node keeps its existing six-model tool-enabled list.
+
 ### Qwen (DashScope)
 
 Qwen video frame-sampling helpers are retained in the source but disabled in
@@ -274,7 +310,7 @@ the source of truth if OSS upload fails.
 
 | Node | Route | Authentication |
 | --- | --- | --- |
-| GPT | `/v1/chat/completions` | Bearer |
+| GPT | `/v1/chat/completions`; Codex/Pro: `/v1/responses` | Bearer |
 | DeepSeek | `/v1/chat/completions` | Bearer |
 | Claude | `/claude/v1/messages` | `x-api-key` |
 | Gemini | `/gemini/v1beta/models/{model}:generateContent` | `x-goog-api-key` |

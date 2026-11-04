@@ -207,6 +207,8 @@ class QwenLLMNode(_BaseLLMNode):
         return inputs
 
 
+# Keep the Agent's tool-enabled model list independent of the text node catalog.
+AGENT_MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"]
 AGENT_IMAGE_MODELS = ["gpt-image-2", "bananapro"]
 AGENT_PROGRESS_EVENT = "comfyui-llm-agent-progress"
 AGENT_PROGRESS_SAFE_KEYS = {
@@ -286,7 +288,7 @@ class AgentSDKNode(_AgentNodeBase):
                     io.String.Input("prompt", multiline=True, default=""),
                     io.Combo.Input(
                         "agent_model",
-                        options=model_names("gpt"),
+                        options=AGENT_MODELS,
                         default=default_model("gpt"),
                     ),
                     io.Combo.Input(
@@ -350,7 +352,7 @@ class AgentSDKNode(_AgentNodeBase):
             return {
                 "required": {
                     "prompt": ("STRING", {"multiline": True, "default": ""}),
-                    "agent_model": (model_names("gpt"), {"default": default_model("gpt")}),
+                    "agent_model": (AGENT_MODELS, {"default": default_model("gpt")}),
                     "skill_override": (skill_options, {"default": SKILL_LABELS["auto"]}),
                     "image_model": (AGENT_IMAGE_MODELS, {"default": "gpt-image-2"}),
                     "thinking_level": (

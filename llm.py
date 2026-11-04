@@ -236,13 +236,34 @@ def _openai_messages(system_prompt, user_prompt, image_b64=None):
 
 def build_gpt_payload(model, thinking_level, system_prompt, user_prompt, image_b64=None):
     spec = validate_common("gpt", model, thinking_level, system_prompt, user_prompt)
-    return {
+    effort = spec.get("off_effort", "none") if thinking_level == "off" else thinking_level
+    minimum = spec.get("min_thinking")
+    if minimum and THINKING_LEVELS.index(thinking_level) < THINKING_LEVELS.index(minimum):
+        effort = minimum
+    if spec.get("api") == "responses":
+        content = [{"type": "input_text", "text": user_prompt}]
+        if image_b64:
+            content.append({"type": "input_image", "image_url": f"data:image/png;base64,{image_b64}"})
+        payload = {
+            "model": model,
+            "input": [{"role": "user", "content": content}],
+            "max_output_tokens": spec["max_tokens"],
+            "reasoning": {"effort": effort},
+            "stream": False,
+            "store": False,
+        }
+        if system_prompt.strip():
+            payload["instructions"] = system_prompt.strip()
+        return payload
+    payload = {
         "model": model,
         "messages": _openai_messages(system_prompt, user_prompt, image_b64),
         "max_completion_tokens": spec["max_tokens"],
-        "reasoning_effort": "none" if thinking_level == "off" else thinking_level,
         "stream": False,
     }
+    if spec.get("reasoning", True):
+        payload["reasoning_effort"] = effort
+    return payload
 
 
 def build_deepseek_payload(model, thinking_level, system_prompt, user_prompt):
@@ -360,7 +381,9 @@ def build_qwen_payload(model, system_prompt, user_prompt):
 def build_request(provider, model, thinking_level, system_prompt, user_prompt, image=None):
     image_b64 = encode_single_image(image) if image is not None else None
     if provider == "gpt":
-        return "/v1/chat/completions", build_gpt_payload(
+        validate_common(provider, model, thinking_level, system_prompt, user_prompt, image)
+        path = "/v1/responses" if model_spec(provider, model).get("api") == "responses" else "/v1/chat/completions"
+        return path, build_gpt_payload(
             model, thinking_level, system_prompt, user_prompt, image_b64
         )
     if provider == "deepseek":
@@ -395,7 +418,15 @@ def build_request(provider, model, thinking_level, system_prompt, user_prompt, i
 
 def extract_text(provider, response):
     try:
-        if provider in {"gpt", "deepseek"}:
+        if provider == "gpt" and "output" in response:
+            if response.get("status") in {"failed", "incomplete", "cancelled"}:
+                raise ValueError(f"GPT response was {response['status']}: {response.get('error') or response.get('incomplete_details')}")
+            text = "".join(
+                part.get("text", "")
+                for item in response["output"] if item.get("type") == "message"
+                for part in item.get("content", []) if part.get("type") == "output_text"
+            )
+        elif provider in {"gpt", "deepseek"}:
             content = response["choices"][0]["message"]["content"]
             if isinstance(content, str):
                 text = content

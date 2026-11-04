@@ -49,7 +49,7 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(summary["input_tokens"], 3_000)
         self.assertEqual(summary["cached_input_tokens"], 200)
         self.assertEqual(summary["output_tokens"], 300)
-        self.assertAlmostEqual(summary["estimated_cost_usd"], 0.01155)
+        self.assertAlmostEqual(summary["estimated_cost_usd"], 0.00924)
 
 
 class OutputContractTests(unittest.TestCase):

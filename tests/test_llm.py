@@ -18,12 +18,19 @@ class PayloadTests(unittest.TestCase):
         self.assertEqual(
             models.model_names("gpt"),
             [
+                "gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
                 "gpt-5.6-sol",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna",
+                "gpt-chat-latest",
                 "gpt-5.5",
                 "gpt-5.4",
+                "gpt-5.4-pro",
                 "gpt-5.4-mini",
+                "gpt-5.4-nano", "gpt-5.3-codex", "gpt-5.2", "gpt-5.2-codex",
+                "gpt-5.1", "gpt-5.1-codex", "gpt-5.1-codex-mini", "gpt-5.1-codex-max",
+                "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-pro", "gpt-5-codex",
+                "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o",
             ],
         )
         self.assertEqual(models.default_model("gpt"), "gpt-5.5")
@@ -207,7 +214,7 @@ class PayloadTests(unittest.TestCase):
             },
         )
         self.assertEqual(standard["context_tier"], "standard")
-        self.assertAlmostEqual(standard["estimated_cost_usd"], 0.142)
+        self.assertAlmostEqual(standard["estimated_cost_usd"], 0.0284)
 
         long_context = llm.estimate_gpt_cost(
             "gpt-5.6-luna",
@@ -220,7 +227,7 @@ class PayloadTests(unittest.TestCase):
             },
         )
         self.assertEqual(long_context["context_tier"], "long_context")
-        self.assertAlmostEqual(long_context["estimated_cost_usd"], 0.51)
+        self.assertAlmostEqual(long_context["estimated_cost_usd"], 0.102)
 
     def test_gpt_cost_returns_none_without_usage(self):
         self.assertIsNone(
