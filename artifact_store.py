@@ -286,7 +286,7 @@ async def publish_records(records, job_id, config):
             record.error = f"OSS publish skipped: {safe_error_message(exc)}"
         return records
     for record in records:
-        if record.status != "success":
+        if record.status != "success" or record.kind == "reference":
             continue
         try:
             await store.upload(record, job_id)

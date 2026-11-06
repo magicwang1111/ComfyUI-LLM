@@ -192,6 +192,14 @@ under `output/video/` and preview them with their original audio. Multiple video
 are saved individually; image-only and text-only runs emit no videos.
 The TikTok fashion video skill registers `final.mp4` from `download_video.py --run-dir`
 inside the job output directory and records `state.json.delivery_mode` as `video`.
+On Linux, its bundled browser collector can read the configured shop's exact PID
+and download original product photos. Run `bash install_tiktok_browser.sh`, then
+configure/login the persistent profile as described in
+[browser setup and migration](skills/tiktok-fashion-video/references/browser-setup.md).
+Runtime data defaults to the Git-ignored `.tiktok_browser/` directory; relative
+paths in `config.local.json` move with the node. Agent prepares its own prompt and
+the bundled API workflow, and uses the invoking Account Manager user's task session
+for video submission. Login profiles and generation credentials are never committed.
 A read-only cost
 summary at the bottom of the node totals all GPT calls made by the agent. The
 estimate excludes image-generation charges. The structured usage summary is

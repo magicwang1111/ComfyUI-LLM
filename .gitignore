@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 config.local.json
 .agent_env/
+.tiktok_browser/
 output/
 skills/multi-view-fashion-shoot
 skills/fashion-model-outfit-swap/

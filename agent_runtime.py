@@ -302,11 +302,11 @@ class AgentRuntime:
         outputs = [
             item
             for item in records
-            if item.kind == "output" and Path(item.path).name.casefold() == requested
+            if item.kind in {"output", "reference"} and Path(item.path).name.casefold() == requested
         ]
         if len(outputs) != 1:
             available = [
-                Path(item.path).name for item in records if item.kind == "output"
+                Path(item.path).name for item in records if item.kind in {"output", "reference"}
             ]
             raise ValueError(
                 f"Generated image filename not found: {image_name}. "
@@ -566,7 +566,7 @@ class AgentRuntime:
             checklist: str,
             reference_image_indices: list[int] | None = None,
         ) -> str:
-            """Inspect one generated image, optionally comparing it with numbered task inputs."""
+            """Inspect one registered output or downloaded product reference, optionally comparing numbered task inputs."""
             nonlocal inspection_count
             output = runtime._output_by_name(runtime.artifact_store.records, image_name)
             if inspection_limit is not None and inspection_count >= inspection_limit:
@@ -728,6 +728,7 @@ class AgentRuntime:
                         )
                         record = existing or runtime.artifact_store.add(
                             output_path,
+                            kind=("reference" if skill.path.name == "tiktok-fashion-video" and script.name in {"collect_product.py", "crop_garment.py"} else "output"),
                             width=width,
                             height=height,
                         )

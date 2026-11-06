@@ -5,6 +5,13 @@
   "retry_delay": 2,
   "allowed_input_roots": [],
   "allowed_output_roots": [],
+  "tiktok_browser": {
+    "profile_dir": ".tiktok_browser/profile",
+    "node_executable": "node",
+    "playwright_module": ".tiktok_browser/node_modules/playwright",
+    "channel": "",
+    "run_as_user": ""
+  },
   "oss_enabled": false,
   "oss_endpoint": "https://oss-cn-hangzhou.aliyuncs.com",
   "oss_region": "cn-hangzhou",

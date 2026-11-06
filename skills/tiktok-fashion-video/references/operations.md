@@ -2,21 +2,13 @@
 
 Paths, host, model, workflow, workbook and face are configurable. `RUN` is an isolated directory and `BASE` a Comfy endpoint. Agent Node injects the current task owner session and instance URL; omit `--base-url` there. Standalone CLI credentials: `COMFY_USERNAME` / `COMFY_PASSWORD`, with an explicit `COMFY_BASE_URL` or `--base-url`. Never echo them or save login responses/cookies. Vapeur uses `VAPEUR_API_KEY` from env or config; OSS uses configured credential fields.
 
-## Linux-first browser
+## Linux browser
 
-The verified environment used SSH alias `goumei`, persistent Chrome profile `/mnt/tiktok-browser-probe/profile`, user `tiktok-browser`, and Node `/mnt/tiktok-browser-probe/runtime/bin`. Parameterize these for another host. The parent verified login persistence after a browser restart; this video run reused its cached original photos.
+`collect_product.py` and `browser_collect.cjs` are shipped with the node and use a configured persistent shop login profile. See [browser-setup.md](browser-setup.md) for portable installation/migration. The historical `/mnt/tiktok-browser-probe` profile can be selected in private config; it is not a required path or an SSH service.
 
-```bash
-ssh goumei 'cd /mnt/tiktok-browser-probe; runuser -u tiktok-browser -- env PATH=/mnt/tiktok-browser-probe/runtime/bin:/usr/bin:/bin npm exec --yes --package @playwright/cli -- playwright-cli -s=tiktok-probe snapshot'
-```
+The collector visits the exact 19-digit PID detail page, checks the returned PID/title and extracts at most nine original main photos. It saves bytes, image hashes and verification in `RUN/product/manifest.json`. A valid manifest in the same run is reused. It does not edit or publish products. OTP remains an operator step.
 
-Search exact PID, require one result, inspect title, extract at most nine original photo URLs. Do not save/update/publish product pages. Keep bytes, URLs and verification in a manifest. OTP remains a manual gate. No browser revisit is needed when verified cached inputs suffice.
-
-On Linux use server-local Comfy directly. From Windows, the tested endpoint was `http://127.0.0.1:18183`, tunneled to remote `127.0.0.1:8183`. Check the listener first. If needed:
-
-```powershell
-Start-Process ssh -WindowStyle Hidden -ArgumentList '-N','-L','18183:127.0.0.1:8183','-o','ExitOnForwardFailure=yes','goumei'
-```
+In Agent Node, omit `--base-url` so the authenticated task's actual instance is used. Standalone scripts need their own explicitly configured endpoint and login.
 
 ## Crop, submit and resume
 

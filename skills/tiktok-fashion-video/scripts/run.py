@@ -2,12 +2,14 @@ import argparse
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 import requests
 
 RUN = Path(__file__).resolve().parent
 BASE = os.environ.get('COMFY_TASK_BASE_URL') or os.environ.get('COMFY_BASE_URL', '')
+WORKFLOW_TEMPLATE = Path(__file__).resolve().parents[3] / 'workflow/20261104wan3-api.json'
 
 def save(name, value):
     target = RUN / name
@@ -41,6 +43,27 @@ def login():
     response.raise_for_status()
     assert session.cookies.get('jwt_token'), 'No jwt_token login cookie'
     return session
+
+def prepare(args):
+    if (RUN / 'submission-intent.json').exists():
+        raise ValueError('Submission intent exists; resume this task instead of changing its prompt.')
+    manifest = json.loads((RUN / 'product/manifest.json').read_text(encoding='utf-8'))
+    if manifest.get('pid') != args.pid:
+        raise ValueError('Prepared product PID does not match the requested PID.')
+    if not args.prompt_text or not args.prompt_text.strip():
+        raise ValueError('Prepare requires the complete video prompt in --prompt-text.')
+    workflow = json.loads(WORKFLOW_TEMPLATE.read_text(encoding='utf-8'))
+    workflow['61']['inputs']['prompt'] = args.prompt_text
+    workflow['61']['inputs']['duration'] = args.duration
+    workflow['61']['inputs']['model_version'] = args.model
+    workflow['79']['inputs']['image'] = ''
+    workflow['78']['inputs']['image'] = ''
+    save('workflow.json', workflow)
+    (RUN / 'prompt.txt').write_text(args.prompt_text, encoding='utf-8')
+    save('analysis.json', {'pid': args.pid, 'title': manifest['title'], 'source_url': manifest['source_url']})
+    status('prepared', pid=args.pid)
+    print(json.dumps({'stage': 'prepared', 'workflow': str(RUN / 'workflow.json'), 'prompt': str(RUN / 'prompt.txt')}, ensure_ascii=False))
+
 
 def submit(args):
     assert not (RUN / 'submission-intent.json').exists(), 'Intent exists. Never automatically resubmit; poll/reconcile existing job.'
@@ -97,6 +120,14 @@ def submit(args):
 def poll(args=None):
     job = json.loads((RUN/'job.json').read_text())
     s = login()
+    deadline = time.monotonic() + min(240, max(0, getattr(args, 'wait_seconds', 0)))
+    while True:
+        if poll_once(s, job) or time.monotonic() >= deadline:
+            return
+        time.sleep(min(10, max(0, deadline - time.monotonic())))
+
+
+def poll_once(s, job):
     r = s.get(BASE + '/history/' + job['prompt_id'], timeout=60)
     r.raise_for_status()
     data = r.json()
@@ -106,19 +137,22 @@ def poll(args=None):
         state = entry.get('status',{})
         status('generation_complete' if state.get('completed') else 'generation_failed' if state.get('status_str') == 'error' else 'running', generation_status=state)
         print(json.dumps({'status':state, 'outputs':entry.get('outputs',{})}, ensure_ascii=False))
+        return bool(state.get('completed') or state.get('status_str') == 'error')
     else:
         status('running')
         print('Job pending/running; no completed history yet.')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['submit','poll'])
+    parser.add_argument('action', choices=['prepare','submit','poll'])
     parser.add_argument('--run-dir',type=Path,default=RUN)
     parser.add_argument('--base-url',default=BASE)
     parser.add_argument('--workflow',type=Path)
     parser.add_argument('--face',type=Path)
     parser.add_argument('--garment',type=Path)
     parser.add_argument('--prompt',type=Path)
+    parser.add_argument('--prompt-text')
+    parser.add_argument('--wait-seconds',type=int,default=120)
     parser.add_argument('--pid')
     parser.add_argument('--duration',type=int,default=15)
     parser.add_argument('--model',default='3.0-prime')
@@ -126,4 +160,6 @@ if __name__ == '__main__':
     RUN=args.run_dir.resolve()
     RUN.mkdir(parents=True,exist_ok=True)
     BASE=args.base_url.rstrip('/')
-    {'submit':submit, 'poll':poll}[args.action](args)
+    args.workflow = args.workflow or RUN / 'workflow.json'
+    args.prompt = args.prompt or RUN / 'prompt.txt'
+    {'prepare':prepare, 'submit':submit, 'poll':poll}[args.action](args)

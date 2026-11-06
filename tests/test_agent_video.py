@@ -113,6 +113,16 @@ class AgentVideoTests(unittest.TestCase):
             self.assertEqual(runtime.events[-1]["event"], "tool_error")
             self.assertIn("Missing workflow file", runtime.events[-1]["message"])
 
+            (scripts / "collect_product.py").write_text(
+                "import sys\nfrom PIL import Image\nImage.new('RGB', (20, 30)).save(sys.argv[2])\n",
+                encoding="utf-8",
+            )
+            reference_args = json.dumps({"script_name": "collect_product.py", "arguments": ["--output", str(runtime.artifact_store.outputs_dir / 'product.jpg')]})
+            reference = json.loads(asyncio.run(script_tool.on_invoke_tool(context, reference_args)))
+            self.assertEqual(reference['artifact']['kind'], 'reference')
+            inspected = runtime._output_by_name(runtime.artifact_store.records, 'product.jpg')
+            self.assertEqual(inspected.kind, 'reference')
+
     def test_agent_exposes_all_successful_videos_and_persists_video_delivery(self):
         with tempfile.TemporaryDirectory() as temp:
             records = [
