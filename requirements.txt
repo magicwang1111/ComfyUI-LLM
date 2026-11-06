@@ -3,4 +3,5 @@ av
 imageio-ffmpeg
 numpy
 pillow
+lxml
 alibabacloud-oss-v2>=1,<2

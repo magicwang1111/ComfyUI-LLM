@@ -1,32 +1,25 @@
-# BC workbook append
+# Database and Excel export
 
-Append after the last populated record on the selected sheet. Styled blank rows are not product records. END append does not mean modifying an earlier matching PID. Sequence follows the prior A label (`A73` became `A74`).
+SQLite is the live product/video record store. Both original workbooks are imported once, including every sheet, row, original OOXML part and native image. The originals remain backups; runtime lookup and recording do not read or overwrite them.
 
-| Column | Value |
-|---|---|
-| A | Next sequence |
-| B | Exact 19-digit PID as text |
-| C | Exact TikTok title |
-| D, E | Blank |
-| F | Original first product photo, regardless of crop |
-| G, H | Chinese translation and English transcription of actual speech |
-| I | Durable verified OSS URL |
-| J, K | Actual-video English caption and hashtags |
-| L, M, N | Blank |
+The `products` table uses exact text PID keys and includes SPU, category, historical prices/stock and product image URL. When a source PID was rounded, import repairs it only through a unique SPU match to an exact PID from another sheet. Original values remain in `source_rows` and `workbook_parts`; `cell_overrides` documents export normalization. Unresolved values are preserved, never guessed.
 
-Read the available spreadsheet skill; prefer Artifact Tool for ordinary edits. On this workbook export failed with `Arg_OutOfMemoryException`, so the authorized limited ZIP/XML fallback preserved native images and untouched workbook parts.
+The `videos` table contains channel sheet/sequence, PID, original row values and new generation metadata. New rows include the original first product photo, actual Chinese/English speech, caption, hashtags, QC and video location. Generation IDs are unique; SQLite transactions serialize concurrent sequence allocation. Imported pictures are indexed by workbook, sheet and row in `images`, with bytes in `workbook_parts`.
 
-`append_workbook.py` supports the inspected BC layout: shared strings, existing drawings/hyperlinks, A-number sequence, BC style indexes. It asserts preconditions. Reinspect/adapt another template instead of guessing. Workbook, sheet, photo and run paths are configurable.
+Agent lookup: `catalog.py --pid EXACT_PID`. The node records generated videos after publication when `tiktok_database.enabled` is configured. It uses the configured channel sheet, not a username guessed from the prompt. Generation account ownership continues to come from Account Manager. The configured channel catalog is shared; do not put unrelated private data in it.
 
-Required RUN files: `analysis.json` with exact `pid` and `title`; actual-video `qc.json` with `transcript_english`, `translation_chinese`, `caption_english`, `hashtags`; `ffprobe.json`; `final.mp4`; `publication.json` with `url` and `public_unauthenticated_get_verified=true`.
+Run these from the ComfyUI-LLM directory:
 
-```text
-python scripts/append_workbook.py --workbook WORKBOOK.xlsx --sheet bnmb --run-dir RUN --photo ORIGINAL_01.jpg
-python scripts/append_workbook.py --workbook WORKBOOK.xlsx --sheet bnmb --run-dir RUN --photo ORIGINAL_01.jpg --commit
+```bash
+python database_cli.py import --videos 'workflow/BC渠道号视频.xlsx' --products 'workflow/PID查询表格.xlsx'
+python database_cli.py lookup --pid 1731312562904010825
+python export_excel.py --output-dir data/exports
+python export_excel.py --kind videos --output-dir data/exports
+python database_cli.py backup --output /backup/tiktok.sqlite3
 ```
 
-First invocation backs up and stages. Review staged row, XML types and image. Second commits the authorized append after verifying source hash stability. Existing committed receipt prevents duplication. Locks preserve the staged candidate; do not force-close Excel.
+`config.local.json` selects `tiktok_database.path` (default `data/tiktok.sqlite3`, relative to the node), `enabled`, and `sheet` (default `bnmb`). Export reads one consistent database snapshot, preserves old pictures/sheets/styles, appends generated rows with embedded original photos, and writes PIDs as text. Existing export files are atomically replaced. The source workbooks are not edited by normal runtime or default export.
 
-Verify unchanged old row XML, image hashes, other sheet parts, old styles and anchors. New B must be `inlineStr` with `@` format. Artifact renderer still displayed this string in scientific notation; direct `inspect` returned exact digits. Native XML/readback establishes precision. Do not convert the PID to a number to repair a preview.
+For migration, use the backup command and transfer that snapshot, private configuration and necessary runtime dependencies. Update the configured path on the new server. The database contains the Excel template parts and pictures, so the original spreadsheets are not required for export. Do not copy only the main SQLite file while writers are running: use SQLite backup to include committed WAL data. Database files, generated exports and credentials are excluded from Git.
 
-Imported no-fill cells rendered black. A disposable in-memory white-background preview made the row readable without exporting those preview changes. Native Excel visual verification was not performed; do not claim it from a preview.
+The node publishes catalog videos under the configured permanent public OSS prefix, verifies an unsigned GET against the file hash, and stores `publication.json` before recording the row. Do not configure temporary object expiration for this prefix. If publication is disabled/fails, the database keeps the local/OSS location and reports the limitation; it does not invent a public link or lose the video.

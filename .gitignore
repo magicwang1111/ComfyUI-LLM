@@ -5,5 +5,6 @@ config.local.json
 .agent_env/
 .tiktok_browser/
 output/
+data/
 skills/multi-view-fashion-shoot
 skills/fashion-model-outfit-swap/

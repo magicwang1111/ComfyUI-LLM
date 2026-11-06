@@ -5,6 +5,12 @@
   "retry_delay": 2,
   "allowed_input_roots": [],
   "allowed_output_roots": [],
+  "tiktok_database": {
+    "enabled": false,
+    "path": "data/tiktok.sqlite3",
+    "sheet": "bnmb",
+    "public_oss_prefix": "Goumee-ComfyUI-Server-Data/public/servers/comfyui-llm"
+  },
   "tiktok_browser": {
     "profile_dir": ".tiktok_browser/profile",
     "node_executable": "node",

@@ -170,6 +170,22 @@ class AgentVideoTests(unittest.TestCase):
             ])
             self.assertEqual(result["ui"]["animated"], (True,))
 
+    def test_database_receipt_is_persisted_and_returned_with_video(self):
+        with tempfile.TemporaryDirectory() as temp:
+            record = artifact_store.ArtifactRecord(path=str(Path(temp) / 'final.mp4'), content_type='video/mp4').disk_dict()
+            worker = SimpleNamespace(run=AsyncMock(return_value={'route': {'skill_name': 'tiktok-fashion-video'}, 'text': 'Video completed', 'artifacts': [record]}))
+            receipt = {'records': [{'sheet': 'bnmb', 'sequence': 'A74'}], 'warnings': []}
+            with patch.object(nodes, 'load_config', return_value={'allowed_output_roots': [temp], 'tiktok_database': {'enabled': True}}), patch.object(nodes, 'resolve_runtime_config', return_value={'timeout': 10}), patch.object(nodes, 'AgentWorkerClient', return_value=worker), patch.object(nodes, 'InputImpl', SimpleNamespace(VideoFromFile=lambda p: p)), patch.object(nodes, 'record_outputs', AsyncMock(return_value=receipt)) as save, patch.object(nodes, 'publish_records', AsyncMock()) as publish:
+                result = asyncio.run(nodes.AgentSDKNode().run_agent(
+                    prompt='Generate video', agent_model='gpt-6-astra', skill_override='tiktok-fashion-video',
+                    image_model='gpt-image-2', thinking_level='high', output_dir=temp,
+                    max_agent_turns=12, publish_to_oss=True))
+            save.assert_awaited_once()
+            self.assertEqual(publish.call_args.args[0], [])  # Catalog videos are uploaded once to the permanent prefix.
+            self.assertIn('A74', result[1])
+            state = json.loads(next(Path(temp).rglob('state.json')).read_text(encoding='utf-8'))
+            self.assertEqual(state['database'], receipt)
+
 
 if __name__ == "__main__":
     unittest.main()

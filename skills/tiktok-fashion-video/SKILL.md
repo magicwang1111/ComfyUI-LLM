@@ -1,11 +1,11 @@
 ---
 name: tiktok-fashion-video
-description: Produce an authorized TikTok fashion video from an exact product PID and supplied identity photo using an existing ComfyUI WAN workflow, inspect actual video and speech, publish to OSS, and append a channel workbook while preserving native images.
+description: Produce an authorized TikTok fashion video from an exact product PID and supplied identity photo, inspect actual video and speech, and record the result in the configured SQLite catalog for later Excel export.
 ---
 
 Use this for the practical product-to-video workflow. Follow the user's current scope and reuse verified product caches. It does not authorize extra paid versions, product edits, TikTok posting, or unrelated workbook changes.
 
-Read [operations.md](references/operations.md) for commands, resume behavior and browser access. Read [script-rules.md](references/script-rules.md) when writing the prompt, with current user instructions taking precedence. Read [workbook.md](references/workbook.md) before an Excel append. [verified-run.md](references/verified-run.md) states what the first real run demonstrated and its limitations.
+Read [operations.md](references/operations.md) for commands, resume behavior and browser access. Read [script-rules.md](references/script-rules.md) when writing the prompt, with current user instructions taking precedence. Read [workbook.md](references/workbook.md) for database lookup and Excel export. [verified-run.md](references/verified-run.md) states what the first real run demonstrated and its limitations.
 
 ## Agent Node runtime
 
@@ -13,6 +13,7 @@ A PID and the supplied identity photo are sufficient to start product lookup on 
 
 Use this sequence, keeping RUN inside the task's local output directory:
 
+0. `catalog.py --pid EXACT_PID` returns the indexed product record and previous channel videos from the configured database. Treat imported price/stock as historical, and still verify the current shop product. If the catalog is not enabled or has no matching product, continue browser lookup; do not ask for either original Excel file.
 1. `collect_product.py --pid EXACT_PID --run-dir RUN --output RUN/product-contact-sheet.jpg` reads the authenticated shop's exact PID detail page, verifies its URL/title, downloads original photos, and returns paths plus `product/manifest.json`. Inspect the registered contact sheet with `inspect_generated_image` to identify garment structure and the lowest-index complete frontal photo. Product records and previously written prompts are not required from the user.
 2. Use `crop_garment.py` on that original, with visually chosen bounds and `--output RUN/garment-crop.jpg --metadata RUN/crop.json`. Inspect the crop, including neckline/shoulders/hem. Both images are reference artifacts, not generated clothing or final deliverables.
 3. Read `references/script-rules.md`, then write the full Chinese prompt yourself from verified garment facts and the supplied identity. Save it with `run.py prepare --run-dir RUN --pid EXACT_PID --prompt-text FULL_PROMPT --duration 15`. This creates `prompt.txt`, `workflow.json`, `analysis.json` and `status.json` using the node's bundled API template. Never retain the template's example clothing or dialogue.
@@ -20,7 +21,7 @@ Use this sequence, keeping RUN inside the task's local output directory:
 5. `run.py poll --run-dir RUN --wait-seconds 120` waits for the existing job; repeat polling only while pending. On completion, `download_video.py --run-dir RUN` registers the actual MP4. If generation failed, report it without resubmission.
 6. Run `gemini_qc.py --video RUN/final.mp4 --face INPUT_FACE --garment RUN/garment-crop.jpg --output RUN/gemini-response.json` for actual video/audio inspection. Its default config is the node's private config; do not pass or read credentials. It compresses oversized QC input while preserving full duration/audio, handles HTTP 413 with a smaller copy, and retries transient failures with backoff (three HTTP attempts total). Do not wrap it in another retry loop. Report concrete QC limitations. An analysis failure does not erase the generated MP4 or authorize another video.
 
-Agent Node persists its own state/artifact files and returns the final summary as text; a separate RESULT.md is not required in this mode. Agent Node handles OSS publication according to its `publish_to_oss` switch after the skill returns; do not also call `publish_oss.py` in this mode. Only append a workbook when the user requests it and supplies a target workbook/sheet accessible to the task. A bare PID request does not imply editing a shared workbook.
+Agent Node persists its state/artifacts and returns the final summary as text. After the skill returns, the node handles OSS publication and, when `tiktok_database.enabled` is configured, records the video in the configured channel database automatically. Do not modify Excel or write the database from the Agent; do not also call `publish_oss.py`. The node deduplicates by generation task ID and reports the assigned channel sequence. Excel is an on-demand export, not the live record store. Database/publication failures must not erase a generated video or trigger regeneration.
 
 A browser login challenge requires the shop account owner to authenticate the configured profile. Do not run interactive `--login` inside the Agent tool. If lookup fails, report the actual collector error and keep the run directory. Do not infer missing garment facts from the identity photo. A video child task requires a free scheduler worker and available account concurrency.
 
@@ -35,10 +36,10 @@ A browser login challenge requires the shop account owner to authenticate the co
 7. Download actual output and inspect it with PyAV; a separate ffprobe executable is not required. The download helper can resume an existing `final.mp4` without another generation or authenticated download, and saves compatible metadata in `ffprobe.json`. Duration/audio deviations are reported as warnings, not loss of the video artifact. Send the complete video including audio (a compressed QC copy when needed) as Gemini `inlineData`; silent frames cannot transcribe speech. Save raw response and parsed QC. Keep unclear words marked. Derive workbook speech, translation, caption and tags from actual video, not the planned prompt.
 8. Inspect duration, framing, garment, identity, shot count, mouth synchronization and prohibited text/music. Separate generation success from creative acceptance. A model's `overall_pass` cannot override concrete missed requirements. Preserve the single output and report issues unless another paid run is authorized.
 9. Prefer a verified existing public Comfy output. Otherwise publish the final asset to configured OSS public storage and verify unauthenticated GET, MIME type and exact bytes/hash. An expiring signed URL is not a permanent publication URL.
-10. After successful generation, back up the workbook, stage the exact append, verify old rows/media and read back new values, then commit the already-authorized append. If locked, preserve staged output and report the lock. Write `RESULT.md` with video URL/path, IDs, QC, row/backup, skill path and limitations.
+10. Preserve the product manifest, original first product photo, `analysis.json`, `job.json`, `qc.json` and `final.mp4` for the node's database writer. It records actual speech, translation, caption, hashtags, original photo and permanent video link; missing QC is left missing rather than invented. Use `export_excel.py` outside the Agent to export the database when requested.
 
 ## Human-dependent boundaries
 
 Persisted TikTok login can expire and OTP may require the account owner. Do independent cached-input work while blocked. Use existing authorization without an extra approval ceremony; seek new authorization only outside that scope. Quality defects may need human acceptance, especially unclear speech or identity mismatch. One completed run does not establish general unattended reliability.
 
-Media helpers use requests, Pillow, PyAV and imageio-ffmpeg. QC compression finds FFmpeg on PATH, beside the Python executable, or in imageio-ffmpeg; install the node requirements when migrating. `append_workbook.py` additionally needs lxml and is deliberately limited to the inspected BC layout. Check its documented preconditions instead of treating it as a general spreadsheet editor.
+Media helpers use requests, Pillow, PyAV and imageio-ffmpeg. QC compression finds FFmpeg on PATH, beside the Python executable, or in imageio-ffmpeg; install the node requirements when migrating. Database queries use Python SQLite; Excel export additionally uses lxml and Pillow.

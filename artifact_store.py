@@ -233,7 +233,7 @@ class OSSArtifactStore:
         filename = safe_filename(Path(record.path).name)
         return f"{self.prefix}/{date_path}/{job_id}/{record.kind}s/{record.sha256[:12]}_{filename}"
 
-    def _upload_sync(self, record, job_id):
+    def _upload_sync(self, record, job_id, public=False):
         import alibabacloud_oss_v2 as oss
 
         path = Path(record.path)
@@ -247,6 +247,7 @@ class OSSArtifactStore:
                     content_type=record.content_type,
                     content_length=path.stat().st_size,
                     metadata={"sha256": record.sha256},
+                    acl="public-read" if public else None,
                 )
             )
         head = self.client.head_object(oss.HeadObjectRequest(bucket=self.bucket, key=key))
@@ -274,6 +275,31 @@ class OSSArtifactStore:
 
     async def upload(self, record, job_id):
         return await asyncio.to_thread(self._upload_sync, record, job_id)
+
+    async def publish_public_video(self, record, job_id, endpoint):
+        from urllib.parse import urlsplit, quote
+        import requests
+
+        await asyncio.to_thread(self._upload_sync, record, job_id, True)
+        host = urlsplit(endpoint if '://' in endpoint else 'https://' + endpoint).netloc.replace('-internal', '')
+        key = record.oss_uri.split('/', 3)[3]
+        url = f'https://{self.bucket}.{host}/{quote(key, safe="/")}'
+
+        def verify():
+            digest, length = hashlib.sha256(), 0
+            with requests.get(url, stream=True, timeout=(15, 180)) as response:
+                response.raise_for_status()
+                if response.headers.get('Content-Type', '').split(';')[0] != 'video/mp4':
+                    raise ValueError('Public video URL returned the wrong content type.')
+                for chunk in response.iter_content(1024 * 1024):
+                    digest.update(chunk)
+                    length += len(chunk)
+            if digest.hexdigest() != record.sha256:
+                raise ValueError('Public video URL does not match the generated file.')
+            return {'url': url, 'sha256': record.sha256, 'bytes': length,
+                    'public_unauthenticated_get_verified': True, 'object_key': key}
+
+        return await asyncio.to_thread(verify)
 
 
 async def publish_records(records, job_id, config):

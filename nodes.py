@@ -10,6 +10,7 @@ except ImportError:  # Allows the lightweight unit-test runtime outside ComfyUI.
     InputImpl = None
 
 from .agent_worker_client import AgentWorkerClient, current_task_environment
+from .fashion_delivery import record_outputs
 from .artifact_store import (
     ArtifactRecord,
     LocalArtifactStore,
@@ -484,7 +485,21 @@ class AgentSDKNode(_AgentNodeBase):
         artifacts.records = [ArtifactRecord(**item) for item in result.get("artifacts", [])]
         publish_config = dict(config)
         publish_config["oss_enabled"] = bool(publish_to_oss and config.get("oss_enabled"))
-        await publish_records(artifacts.records, artifacts.job_id, publish_config)
+        is_fashion = route_data.get("skill_name") == "tiktok-fashion-video" or effective_override == "tiktok-fashion-video"
+        database_enabled = is_fashion and config.get("tiktok_database", {}).get("enabled", False)
+        publishable = [record for record in artifacts.records if not (database_enabled and record.content_type.startswith("video/"))]
+        await publish_records(publishable, artifacts.job_id, publish_config)
+        database_result = None
+        if is_fashion:
+            database_result = await record_outputs(artifacts.records, artifacts.job_dir, artifacts.job_id, config, publish_to_oss)
+            if database_result:
+                messages = [f'视频已入库：{item["sheet"]} / {item["sequence"]}' for item in database_result['records']]
+                messages.extend(database_result['warnings'])
+                for message in messages:
+                    event = {"event": "database", "message": message}
+                    result.setdefault("events", []).append(event)
+                    _send_agent_progress(unique_id, event)
+                result["text"] += "\n\n" + "\n".join(messages)
         videos = [
             InputImpl.VideoFromFile(record.path)
             for record in artifacts.records
@@ -502,6 +517,7 @@ class AgentSDKNode(_AgentNodeBase):
             "events": result.get("events", []),
             "usage": result.get("usage"),
             "artifacts": artifact_data,
+            "database": database_result,
         }
         agent_progress = [
             payload
