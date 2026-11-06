@@ -685,12 +685,13 @@ class AgentRuntime:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
+            script_timeout = 1200 if skill.path.name == "tiktok-fashion-video" and script.name == "gemini_qc.py" else 300
             try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=script_timeout)
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
-                raise ValueError("Skill script exceeded the 300 second timeout.")
+                raise ValueError(f"Skill script exceeded the {script_timeout} second timeout.")
             result = {
                 "returncode": process.returncode,
                 "stdout": redact_task_credentials(stdout.decode("utf-8", errors="replace"))[:10000],

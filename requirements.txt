@@ -1,5 +1,6 @@
 httpx
 av
+imageio-ffmpeg
 numpy
 pillow
 alibabacloud-oss-v2>=1,<2

@@ -1,32 +1,46 @@
-import hashlib
 import argparse
 import json
-import subprocess
-import run
 from pathlib import Path
 
-parser=argparse.ArgumentParser()
-parser.add_argument('--run-dir',type=Path,default=run.RUN)
-parser.add_argument('--base-url',default=run.BASE)
-args=parser.parse_args()
-run.RUN=args.run_dir.resolve()
-run.BASE=args.base_url.rstrip('/')
-RUN=run.RUN
-BASE=run.BASE
-login,save,status=run.login,run.save,run.status
+import run
+from video_media import summarize_video
 
-history=json.loads((RUN/'history.json').read_text(encoding='utf-8'))
-item=history['outputs']['77']['images'][0]
-session=login()
-response=session.get(BASE+'/view',params={k:item[k] for k in ['filename','subfolder','type']},timeout=180)
-response.raise_for_status()
-(RUN/'final.mp4').write_bytes(response.content)
-probe=subprocess.run(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(RUN/'final.mp4')],capture_output=True,text=True,check=True)
-data=json.loads(probe.stdout)
-save('ffprobe.json',data)
-summary={'duration':float(data['format']['duration']),'bytes':len(response.content),'sha256':hashlib.sha256(response.content).hexdigest(),'streams':[{k:s.get(k) for k in ['codec_type','codec_name','width','height','r_frame_rate','sample_rate','channels']} for s in data['streams']]}
-assert abs(summary['duration']-15)<0.2
-assert any(s['codec_type']=='audio' for s in summary['streams'])
-save('video-summary.json',summary)
-status('video_downloaded',video_summary=summary)
-print(json.dumps(summary))
+
+def download(directory):
+    final = directory / 'final.mp4'
+    if not final.exists():
+        history = json.loads((directory / 'history.json').read_text(encoding='utf-8'))
+        item = history['outputs']['77']['images'][0]
+        session = run.login()
+        response = session.get(run.BASE + '/view', params={k: item[k] for k in ['filename', 'subfolder', 'type']}, timeout=180)
+        response.raise_for_status()
+        temporary = directory / 'final.download.mp4'
+        temporary.write_bytes(response.content)
+        # Do not expose a partial download as a finished artifact.
+        summarize_video(temporary)
+        temporary.replace(final)
+    expected_duration = 15
+    workflow = directory / 'workflow-rendered.json'
+    if workflow.exists():
+        expected_duration = float(json.loads(workflow.read_text(encoding='utf-8'))['61']['inputs']['duration'])
+    data, summary = summarize_video(final, expected_duration)
+    # Preserve the workbook helper's metadata filename and schema.
+    run.save('ffprobe.json', data)
+    run.save('video-summary.json', summary)
+    run.status('video_downloaded', video_summary=summary)
+    print(json.dumps(summary))
+    return summary
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--run-dir', type=Path, default=run.RUN)
+    parser.add_argument('--base-url', default=run.BASE)
+    args = parser.parse_args()
+    run.RUN = args.run_dir.resolve()
+    run.BASE = args.base_url.rstrip('/')
+    download(run.RUN)
+
+
+if __name__ == '__main__':
+    main()
