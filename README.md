@@ -350,21 +350,22 @@ Tests use mocked HTTP transports and do not make billable model requests.
 
 ## TikTok catalog and Excel export
 
-The product and channel-video workbooks can be imported into one SQLite database.
-Enable `tiktok_database` in `config.local.json` after importing; generated videos
-are then recorded automatically after publication, with duplicate generation IDs
-prevented. PID lookup no longer loads Excel.
+The independent `tiktok-ops` backend owns the product/video database. Configure
+`tiktok_ops` with `enabled`, `base_url`, `instance_id`, `token`, `sheet` and
+`outbox` in `config.local.json`. CPU service URL: `http://127.0.0.1:8190`.
+The node uses the authenticated executing account and submits generated videos
+through the API. The local outbox retries failures without regenerating videos.
 
 ```bash
-python database_cli.py import --videos "workflow/BC渠道号视频.xlsx" --products "workflow/PID查询表格.xlsx"
 python database_cli.py lookup --pid 1731312562904010825
 python export_excel.py --output-dir data/exports
-python database_cli.py backup --output /backup/tiktok.sqlite3
+python ops_client.py status
+python ops_client.py retry --force
 ```
 
-The default database is `data/tiktok.sqlite3`; paths resolve relative to the node.
+Database migration, account import and backup run from `tiktok-ops`.
 Original sheets/pictures are retained for export, and PIDs are written as text.
 The permanent catalog video prefix is separate from temporary OSS outputs; do
 not apply the temporary-output expiration policy to it. Back up SQLite through
-the CLI before migrating; normal generation does not modify either original
+the backend CLI before migrating; normal generation does not modify either original
 workbook. See [database details](skills/tiktok-fashion-video/references/workbook.md).

@@ -4,10 +4,14 @@ import json
 import os
 import io
 import time
+import sys
 from pathlib import Path
 import requests
 from PIL import Image, ImageOps
 from video_media import compress_for_qc
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from ops_client import flush, queue_qc, settings
 
 MAX_INLINE_BYTES = 12 * 1024 * 1024
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -88,6 +92,11 @@ def save_qc(args, data):
     text = ''.join(p.get('text', '') for p in data['candidates'][0]['content']['parts'])
     parsed = json.loads(text.removeprefix('```json').removesuffix('```').strip())
     args.output.with_name('qc.json').write_text(json.dumps(parsed, ensure_ascii=False, indent=2), encoding='utf-8')
+    if args.output.with_name('ops-delivery.json').exists():
+        options = settings(json.loads(args.config.read_text(encoding='utf-8-sig')))
+        if options['enabled']:
+            queue_qc(options, args.output.parent, parsed)
+            flush(options, limit=5)
     print(json.dumps({'response_file': str(args.output), 'qc': parsed}, ensure_ascii=False))
 
 def main():

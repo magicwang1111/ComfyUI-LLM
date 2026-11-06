@@ -1,6 +1,6 @@
 ---
 name: tiktok-fashion-video
-description: Produce an authorized TikTok fashion video from an exact product PID and supplied identity photo, inspect actual video and speech, and record the result in the configured SQLite catalog for later Excel export.
+description: Produce an authorized TikTok fashion video from an exact product PID and supplied identity photo, inspect actual video and speech, and deliver the result to the configured tiktok-ops API for later Excel export.
 ---
 
 Use this for the practical product-to-video workflow. Follow the user's current scope and reuse verified product caches. It does not authorize extra paid versions, product edits, TikTok posting, or unrelated workbook changes.
@@ -42,4 +42,4 @@ A browser login challenge requires the shop account owner to authenticate the co
 
 Persisted TikTok login can expire and OTP may require the account owner. Do independent cached-input work while blocked. Use existing authorization without an extra approval ceremony; seek new authorization only outside that scope. Quality defects may need human acceptance, especially unclear speech or identity mismatch. One completed run does not establish general unattended reliability.
 
-Media helpers use requests, Pillow, PyAV and imageio-ffmpeg. QC compression finds FFmpeg on PATH, beside the Python executable, or in imageio-ffmpeg; install the node requirements when migrating. Database queries use Python SQLite; Excel export additionally uses lxml and Pillow.
+Media helpers use requests, Pillow, PyAV and imageio-ffmpeg. QC compression finds FFmpeg on PATH, beside the Python executable, or in imageio-ffmpeg; install the node requirements when migrating. Catalog queries and Excel export use the tiktok-ops API; the local SQLite outbox stores only delivery events.

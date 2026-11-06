@@ -168,18 +168,21 @@ class FashionDatabaseTests(unittest.TestCase):
         run = self.make_run()
         record = SimpleNamespace(kind='output', status='success', content_type='video/mp4', path=str(run / 'final.mp4'),
                                  sha256=hashlib.sha256(b'video').hexdigest(), disk_dict=lambda: {'path': str(run / 'final.mp4')})
-        config = {'oss_enabled': True, 'tiktok_database': {'enabled': True, 'path': str(self.db), 'sheet': 'bnmb'}}
+        config = {'oss_enabled': True, 'tiktok_ops': {'enabled': True, 'outbox': str(self.root / 'outbox.sqlite3'), 'sheet': 'bnmb', 'instance_id': 'cpu'}}
         publication = {'url': 'https://example.com/permanent.mp4', 'sha256': record.sha256, 'public_unauthenticated_get_verified': True}
         store = SimpleNamespace(publish_public_video=AsyncMock(return_value=publication))
-        with patch.object(delivery, 'OSSArtifactStore', return_value=store):
-            result = asyncio.run(delivery.record_outputs([record], self.root, 'node-job', config, True))
-            again = asyncio.run(delivery.record_outputs([record], self.root, 'node-job', config, True))
+        identity = {'external_user_id': 'actual-user', 'external_username': 'alice'}
+        receipts = [{'sequence': 'A2', 'sheet': 'bnmb'}, {'sequence': 'A2', 'sheet': 'bnmb', 'already_recorded': True}]
+        with patch.object(delivery, 'OSSArtifactStore', return_value=store), patch.object(delivery, 'record_generation', side_effect=receipts) as submit:
+            result = asyncio.run(delivery.record_outputs([record], self.root, 'node-job', config, True, identity))
+            again = asyncio.run(delivery.record_outputs([record], self.root, 'node-job', config, True, identity))
         self.assertEqual(result['records'][0]['sequence'], 'A2')
         self.assertTrue(again['records'][0]['already_recorded'])
         store.publish_public_video.assert_awaited_once()
-        self.assertEqual(catalog.lookup(self.db, PID)['videos'][-1]['values']['I'], publication['url'])
-        config['tiktok_database']['path'] = str(self.root / 'missing.sqlite3')
-        failed = asyncio.run(delivery.record_outputs([record], self.root, 'node-job', config, True))
+        self.assertEqual(submit.call_args.args[3], identity)
+        self.assertEqual(submit.call_args.args[4], publication)
+        with patch.object(delivery, 'record_generation', side_effect=ValueError('invalid config')):
+            failed = asyncio.run(delivery.record_outputs([record], self.root, 'node-job', config, True, identity))
         self.assertTrue(failed['warnings'])
         self.assertTrue((run / 'final.mp4').exists())
 

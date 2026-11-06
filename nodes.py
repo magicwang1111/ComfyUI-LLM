@@ -10,7 +10,7 @@ except ImportError:  # Allows the lightweight unit-test runtime outside ComfyUI.
     InputImpl = None
 
 from .agent_worker_client import AgentWorkerClient, current_task_environment
-from .fashion_delivery import record_outputs
+from .fashion_delivery import current_identity, record_outputs
 from .artifact_store import (
     ArtifactRecord,
     LocalArtifactStore,
@@ -457,6 +457,12 @@ class AgentSDKNode(_AgentNodeBase):
         if resolved_input:
             allowed_paths.append(resolved_input if resolved_input.is_dir() else resolved_input.parent)
         effective_override = _skill_value(skill_override)
+        ops_identity = None
+        if config.get("tiktok_ops", {}).get("enabled"):
+            try:
+                ops_identity = current_identity()
+            except ValueError:
+                ops_identity = {}
         worker = AgentWorkerClient(config, timeout=runtime_config["timeout"])
         result = await worker.run(
             {
@@ -486,14 +492,15 @@ class AgentSDKNode(_AgentNodeBase):
         publish_config = dict(config)
         publish_config["oss_enabled"] = bool(publish_to_oss and config.get("oss_enabled"))
         is_fashion = route_data.get("skill_name") == "tiktok-fashion-video" or effective_override == "tiktok-fashion-video"
-        database_enabled = is_fashion and config.get("tiktok_database", {}).get("enabled", False)
+        database_enabled = is_fashion and config.get("tiktok_ops", {}).get("enabled", False)
         publishable = [record for record in artifacts.records if not (database_enabled and record.content_type.startswith("video/"))]
         await publish_records(publishable, artifacts.job_id, publish_config)
         database_result = None
         if is_fashion:
-            database_result = await record_outputs(artifacts.records, artifacts.job_dir, artifacts.job_id, config, publish_to_oss)
+            database_result = await record_outputs(artifacts.records, artifacts.job_dir, artifacts.job_id, config, publish_to_oss, ops_identity)
             if database_result:
-                messages = [f'视频已入库：{item["sheet"]} / {item["sequence"]}' for item in database_result['records']]
+                messages = [f'视频已保留，等待后台恢复后自动投递：{item["sheet"]}' if item.get('pending')
+                            else f'视频已入库：{item["sheet"]} / {item["sequence"]}' for item in database_result['records']]
                 messages.extend(database_result['warnings'])
                 for message in messages:
                     event = {"event": "database", "message": message}

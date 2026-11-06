@@ -6,7 +6,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-from fashion_database import lookup, settings
+from ops_client import lookup, settings
 
 
 def main():
@@ -19,7 +19,7 @@ def main():
     if not options['enabled']:
         print(json.dumps({'catalog_enabled': False, 'next': 'Continue verified browser product lookup.'}))
         return
-    print(json.dumps(lookup(options['path'], args.pid), ensure_ascii=False))
+    print(json.dumps(lookup(options, args.pid), ensure_ascii=False))
 
 
 if __name__ == '__main__':

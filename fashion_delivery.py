@@ -3,10 +3,26 @@ import json
 from pathlib import Path
 
 from .artifact_store import OSSArtifactStore, safe_error_message
-from .fashion_database import record_generation, settings
+from .ops_client import record_generation, settings
 
 
-async def record_outputs(records, job_dir, job_id, config, publish_enabled):
+def current_identity():
+    from comfy_execution.utils import get_executing_context
+    from server import PromptServer
+
+    context = get_executing_context()
+    if context is None:
+        raise ValueError('无法取得 ComfyUI 任务执行上下文。')
+    server = PromptServer.instance
+    with server.prompt_queue.mutex:
+        for item in server.prompt_queue.currently_running.values():
+            if len(item) >= 7 and item[1] == context.prompt_id and item[6]:
+                owner = item[6]
+                return {'external_user_id': owner, 'external_username': server.user_manager.users.get(owner, '')}
+    raise ValueError('无法取得当前任务的已认证账号。')
+
+
+async def record_outputs(records, job_dir, job_id, config, publish_enabled, identity=None):
     options = settings(config)
     if not options['enabled']:
         return None
@@ -18,8 +34,6 @@ async def record_outputs(records, job_dir, job_id, config, publish_enabled):
             final = Path(record.path).resolve()
             if final.name != 'final.mp4' or not final.is_relative_to(Path(job_dir).resolve()):
                 continue
-            if not options['path'].is_file():
-                raise ValueError('视频数据库尚未初始化，请先导入两份原表。')
             run = final.parent
             publication, publication_error = None, ''
             receipt = run / 'publication.json'
@@ -36,9 +50,9 @@ async def record_outputs(records, job_dir, job_id, config, publish_enabled):
                 except Exception as exc:
                     publication_error = safe_error_message(exc)
                     result['warnings'].append('永久视频链接发布失败，仍保留数据库记录：' + publication_error)
-            saved = await asyncio.to_thread(record_generation, options['path'], run, record.disk_dict(),
-                                             options['sheet'], publication, publication_error)
+            saved = await asyncio.to_thread(record_generation, options, run, record.disk_dict(),
+                                             identity or current_identity(), publication, publication_error)
             result['records'].append(saved)
         except Exception as exc:
-            result['warnings'].append('视频已输出，但数据库写入失败：' + safe_error_message(exc))
+            result['warnings'].append('视频文件已保留，后台投递需处理：' + safe_error_message(exc))
     return result
