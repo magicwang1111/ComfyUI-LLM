@@ -220,7 +220,11 @@ class NodeTests(unittest.TestCase):
         inputs = nodes.AgentSDKNode.INPUT_TYPES()
         model_input = inputs["required"]["agent_model"]
         model_options = model_input[1]["options"] if model_input[0] == "COMBO" else model_input[0]
-        self.assertEqual(model_options, ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"])
+        self.assertEqual(model_options, [
+            "gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna",
+            "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini",
+        ])
+        self.assertEqual(model_input[1]["default"], "gpt-6-astra")
         self.assertIn("prompt", inputs["required"])
         self.assertIn("skill_override", inputs["required"])
         self.assertIn("images", inputs["optional"])

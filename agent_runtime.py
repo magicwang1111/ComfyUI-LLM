@@ -85,7 +85,7 @@ class AgentRuntime:
         artifact_store,
         image_client,
         api_key,
-        agent_model="gpt-5.5",
+        agent_model="gpt-6-astra",
         image_model="auto",
         thinking_level="medium",
         max_turns=12,
