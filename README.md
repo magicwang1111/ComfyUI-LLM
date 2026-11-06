@@ -186,7 +186,13 @@ through Vapeur's `/v1/responses` route. Its controlled tools can:
 - save full-resolution local artifacts and optionally publish temporary copies
   to Alibaba Cloud OSS.
 
-The node exposes an `IMAGE` preview batch and text summary. A read-only cost
+The node exposes an `IMAGE` preview batch, text summary, and a `VIDEO` output.
+Connect `video` to `ComfyUI-LLM Video Output` to automatically save MP4 files
+under `output/video/` and preview them with their original audio. Multiple videos
+are saved individually; image-only and text-only runs emit no videos.
+The TikTok fashion video skill registers `final.mp4` from `download_video.py --run-dir`
+inside the job output directory and records `state.json.delivery_mode` as `video`.
+A read-only cost
 summary at the bottom of the node totals all GPT calls made by the agent. The
 estimate excludes image-generation charges. The structured usage summary is
 also persisted in `state.json`. Full-resolution

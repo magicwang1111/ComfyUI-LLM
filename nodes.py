@@ -4,9 +4,10 @@ import sys
 from pathlib import Path
 
 try:
-    from comfy_api.latest import io
+    from comfy_api.latest import InputImpl, io
 except ImportError:  # Allows the lightweight unit-test runtime outside ComfyUI.
     io = None
+    InputImpl = None
 
 from .agent_worker_client import AgentWorkerClient
 from .artifact_store import (
@@ -47,6 +48,7 @@ from .models import (
     model_names,
 )
 from .skills_runtime import SkillRegistry
+from .video_nodes import LLMVideoOutput
 
 
 def _api_guidance(exc):
@@ -321,6 +323,7 @@ class AgentSDKNode(_AgentNodeBase):
                 outputs=[
                     io.Image.Output(display_name="images"),
                     io.String.Output(display_name="text"),
+                    io.Video.Output(display_name="video", is_output_list=True),
                 ],
                 hidden=[io.Hidden.unique_id],
                 is_output_node=True,
@@ -329,13 +332,14 @@ class AgentSDKNode(_AgentNodeBase):
         @classmethod
         async def execute(cls, **kwargs):
             node = cls()
-            images, text, estimated_cost, agent_progress = await node.run_agent(
+            images, text, estimated_cost, agent_progress, videos = await node.run_agent(
                 **kwargs,
                 unique_id=cls.hidden.unique_id,
             )
             return io.NodeOutput(
                 images,
                 text,
+                videos,
                 ui={
                     "llm_cost": [estimated_cost],
                     "agent_progress": agent_progress,
@@ -345,8 +349,9 @@ class AgentSDKNode(_AgentNodeBase):
         OUTPUT_NODE = True
         CATEGORY = NODE_CATEGORY
         FUNCTION = "execute_legacy"
-        RETURN_TYPES = ("IMAGE", "STRING")
-        RETURN_NAMES = ("images", "text")
+        RETURN_TYPES = ("IMAGE", "STRING", "VIDEO")
+        RETURN_NAMES = ("images", "text", "video")
+        OUTPUT_IS_LIST = (False, False, True)
 
         @classmethod
         def INPUT_TYPES(cls):
@@ -375,13 +380,13 @@ class AgentSDKNode(_AgentNodeBase):
             }
 
     async def execute_legacy(self, **kwargs):
-        images, text, estimated_cost, agent_progress = await self.run_agent(**kwargs)
+        images, text, estimated_cost, agent_progress, videos = await self.run_agent(**kwargs)
         return {
             "ui": {
                 "llm_cost": [estimated_cost],
                 "agent_progress": agent_progress,
             },
-            "result": (images, text),
+            "result": (images, text, videos),
         }
 
     async def run_agent(
@@ -479,7 +484,13 @@ class AgentSDKNode(_AgentNodeBase):
         publish_config = dict(config)
         publish_config["oss_enabled"] = bool(publish_to_oss and config.get("oss_enabled"))
         await publish_records(artifacts.records, artifacts.job_id, publish_config)
-        delivery_mode = "image" if artifacts.records else "text"
+        videos = [
+            InputImpl.VideoFromFile(record.path)
+            for record in artifacts.records
+            if record.kind == "output" and record.status == "success"
+            and record.content_type.startswith("video/")
+        ]
+        delivery_mode = "video" if videos else ("image" if artifacts.records else "text")
         artifact_data = [record.disk_dict() for record in artifacts.records]
         result_state = {
             "job_id": artifacts.job_id,
@@ -509,6 +520,7 @@ class AgentSDKNode(_AgentNodeBase):
             result["text"],
             format_cost_estimate(result.get("usage"), agent=True),
             agent_progress,
+            videos,
         )
 
 
@@ -519,6 +531,7 @@ NODE_CLASS_MAPPINGS = {
     f"{NODE_PREFIX} DeepSeek": DeepSeekLLMNode,
     f"{NODE_PREFIX} Qwen": QwenLLMNode,
     f"{NODE_PREFIX} Agent SDK": AgentSDKNode,
+    f"{NODE_PREFIX} Video Output": LLMVideoOutput,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {name: name for name in NODE_CLASS_MAPPINGS}

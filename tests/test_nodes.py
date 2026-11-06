@@ -209,6 +209,7 @@ class NodeTests(unittest.TestCase):
                 "ComfyUI-LLM DeepSeek",
                 "ComfyUI-LLM Qwen",
                 "ComfyUI-LLM Agent SDK",
+                "ComfyUI-LLM Video Output",
             },
         )
         self.assertEqual(
@@ -246,7 +247,7 @@ class NodeTests(unittest.TestCase):
         self.assertIn("批量AI换装", skill_options)
         self.assertEqual(
             tuple(nodes.AgentSDKNode.RETURN_NAMES),
-            ("images", "text"),
+            ("images", "text", "video"),
         )
 
     def test_agent_skill_options_only_include_live_registry_entries(self):
@@ -320,11 +321,11 @@ class NodeTests(unittest.TestCase):
         with patch.object(
             node,
             "run_agent",
-            AsyncMock(return_value=("images", "text", "cost summary", [])),
+            AsyncMock(return_value=("images", "text", "cost summary", [], [])),
         ):
             node_result = asyncio.run(node.execute_legacy())
 
-        self.assertEqual(node_result["result"], ("images", "text"))
+        self.assertEqual(node_result["result"], ("images", "text", []))
         self.assertEqual(node_result["ui"]["llm_cost"], ["cost summary"])
         self.assertEqual(node_result["ui"]["agent_progress"], [])
 
@@ -388,7 +389,8 @@ class NodeTests(unittest.TestCase):
             artifacts_share_output_dir = Path(artifact_data[0]["path"]).parent.samefile(
                 artifacts_path.parent
             )
-        images, text, estimated_cost, agent_progress = result
+        images, text, estimated_cost, agent_progress, videos = result
+        self.assertEqual(videos, [])
         self.assertEqual(text, "完成")
         self.assertIn("$0.012300", estimated_cost)
         self.assertIn("不含生图", estimated_cost)
@@ -476,7 +478,8 @@ class NodeTests(unittest.TestCase):
             state_path = artifacts_path.with_name("state.json")
             artifact_data = json.loads(artifacts_path.read_text("utf-8"))
             state_data = json.loads(state_path.read_text("utf-8"))
-        images, text, estimated_cost, agent_progress = result
+        images, text, estimated_cost, agent_progress, videos = result
+        self.assertEqual(videos, [])
         self.assertEqual(text, "纯文字买手分析")
         self.assertIn("$0.004000", estimated_cost)
         self.assertEqual(agent_progress, [])

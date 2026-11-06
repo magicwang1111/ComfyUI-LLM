@@ -62,6 +62,9 @@ function removeLegacyOutputs(node) {
             node.removeOutput(index);
         }
     }
+    if (!node.outputs?.some((output) => output.name === "video")) {
+        node.addOutput("video", "VIDEO");
+    }
     node.setDirtyCanvas?.(true, true);
 }
 

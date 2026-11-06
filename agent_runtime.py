@@ -696,17 +696,28 @@ class AgentRuntime:
                 "stdout": stdout.decode("utf-8", errors="replace")[:10000],
                 "stderr": stderr.decode("utf-8", errors="replace")[:10000],
             }
-            if process.returncode == 0 and "--output" in arguments:
-                output_index = arguments.index("--output") + 1
+            output_flag = "--output"
+            is_tiktok_video = skill.path.name == "tiktok-fashion-video" and script.name == "download_video.py"
+            if is_tiktok_video:
+                output_flag = "--run-dir"
+            if process.returncode == 0 and output_flag in arguments:
+                output_index = arguments.index(output_flag) + 1
                 if output_index < len(arguments):
-                    output_path = Path(arguments[output_index]).expanduser().resolve()
+                    output_path = Path(arguments[output_index]).expanduser()
+                    if not output_path.is_absolute():
+                        output_path = skill.path / output_path
+                    if is_tiktok_video:
+                        output_path = output_path / "final.mp4"
+                    output_path = output_path.resolve()
                     if (
                         output_path.is_file()
                         and _is_within(output_path, [runtime.artifact_store.outputs_dir])
-                        and output_path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+                        and output_path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".webm", ".mkv"}
                     ):
-                        with Image.open(output_path) as output_image:
-                            width, height = output_image.size
+                        width = height = None
+                        if output_path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
+                            with Image.open(output_path) as output_image:
+                                width, height = output_image.size
                         existing = next(
                             (
                                 item
@@ -744,7 +755,9 @@ class AgentRuntime:
     async def execute(self, prompt, decision, image_paths):
         skill = self.registry.get(decision.skill_name)
         text_only = wants_text_only(prompt)
-        required_image_tool = None if text_only else (
+        video_delivery = skill.name == "tiktok-fashion-video" and not text_only
+        delivery_mode = "text only" if text_only else ("video artifacts required" if video_delivery else "image artifacts required")
+        required_image_tool = None if text_only or video_delivery else (
             "edit_images" if image_paths else "generate_image"
         )
         review_instruction = (
@@ -769,12 +782,13 @@ class AgentRuntime:
 <runtime_contract>
 You are executing the selected skill inside one ComfyUI node.
 Selected mode: {decision.mode}
-Delivery mode: {"text only" if text_only else "image artifacts required"}
+Delivery mode: {delivery_mode}
 Use the provided function tools to produce the actual deliverables; never claim an image or file exists unless a tool returned it.
 Original input files are numbered in the order returned by list_input_files.
 Use edit_images when visual references must be preserved and generate_image when there is no visual reference.
 For edit_images, pass size="auto" by default. It preserves dynamic image0's aspect ratio when available, otherwise the first selected input image's ratio, while targeting the same total pixels as 2048x2048. Pass an explicit WIDTHxHEIGHT only when the user explicitly requests that output size or aspect ratio.
 When image artifacts are required, a final text response before an image tool has successfully returned is invalid.
+When video artifacts are required, use the skill scripts to generate and download the video. Keep --run-dir inside the local output directory and pass it explicitly to download_video.py so final.mp4 is registered as the deliverable. Image generation is not a prerequisite for video delivery.
 {review_instruction}
 For a retry, preserve the original output_name stem and append `_重做` or `_final` so the old candidate is replaced, including when the filename starts with a date or timestamp.
 Use run_skill_script only for scripts explicitly shipped under this skill's scripts directory.
@@ -811,7 +825,12 @@ Finish with a concise Chinese summary. Do not expose credentials or signed URL q
             for item in self.artifact_store.records
             if item.kind == "output" and item.content_type.startswith("image/")
         ]
-        if not text_only and not image_outputs:
+        if video_delivery and not any(
+            item.kind == "output" and item.status == "success" and item.content_type.startswith("video/")
+            for item in self.artifact_store.records
+        ):
+            raise ValueError(f"Skill {skill.name} 未生成任何视频产物，请检查视频下载步骤。")
+        if not text_only and not video_delivery and not image_outputs:
             raise ValueError(
                 f"Skill {skill.name} 未生成任何图片产物，任务已终止，不会返回黑色占位图。"
             )
