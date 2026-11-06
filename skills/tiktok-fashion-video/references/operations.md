@@ -1,6 +1,6 @@
 # Operations
 
-Paths, host, model, workflow, workbook and face are configurable. `RUN` is an isolated directory and `BASE` a Comfy endpoint. Credentials: `COMFY_USERNAME` / `COMFY_PASSWORD`. Never echo them or save login responses/cookies. Vapeur uses `VAPEUR_API_KEY` from env or config; OSS uses configured credential fields.
+Paths, host, model, workflow, workbook and face are configurable. `RUN` is an isolated directory and `BASE` a Comfy endpoint. Agent Node injects the current task owner session and instance URL; omit `--base-url` there. Standalone CLI credentials: `COMFY_USERNAME` / `COMFY_PASSWORD`, with an explicit `COMFY_BASE_URL` or `--base-url`. Never echo them or save login responses/cookies. Vapeur uses `VAPEUR_API_KEY` from env or config; OSS uses configured credential fields.
 
 ## Linux-first browser
 

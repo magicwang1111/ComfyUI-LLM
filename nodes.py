@@ -9,7 +9,7 @@ except ImportError:  # Allows the lightweight unit-test runtime outside ComfyUI.
     io = None
     InputImpl = None
 
-from .agent_worker_client import AgentWorkerClient
+from .agent_worker_client import AgentWorkerClient, current_task_environment
 from .artifact_store import (
     ArtifactRecord,
     LocalArtifactStore,
@@ -478,6 +478,7 @@ class AgentSDKNode(_AgentNodeBase):
             },
             artifacts.job_dir,
             on_event=lambda event: _send_agent_progress(unique_id, event),
+            task_environment=current_task_environment(),
         )
         route_data = result["route"]
         artifacts.records = [ArtifactRecord(**item) for item in result.get("artifacts", [])]

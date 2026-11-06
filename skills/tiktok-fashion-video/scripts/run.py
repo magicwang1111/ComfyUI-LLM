@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import requests
 
 RUN = Path(__file__).resolve().parent
-BASE = os.environ.get('COMFY_BASE_URL', 'http://127.0.0.1:18183')
+BASE = os.environ.get('COMFY_TASK_BASE_URL') or os.environ.get('COMFY_BASE_URL', '')
 
 def save(name, value):
     target = RUN / name
@@ -22,6 +22,20 @@ def status(stage, **fields):
     save('status.json', data)
 
 def login():
+    if os.environ.get('COMFY_TASK_AUTH_ERROR'):
+        raise ValueError(os.environ['COMFY_TASK_AUTH_ERROR'])
+    task_token = os.environ.get('COMFY_TASK_TOKEN')
+    if task_token:
+        if not BASE or BASE.rstrip('/') != os.environ.get('COMFY_TASK_BASE_URL', '').rstrip('/'):
+            raise ValueError('Task credentials can only be used with the current ComfyUI instance URL.')
+        session = requests.Session()
+        session.headers['Authorization'] = 'Bearer ' + task_token
+        return session
+    missing = [name for name in ('COMFY_USERNAME', 'COMFY_PASSWORD') if not os.environ.get(name)]
+    if missing:
+        raise ValueError('Standalone video service login is not configured: ' + ', '.join(missing) + '. Agent Node must receive its current task session from Account Manager.')
+    if not BASE:
+        raise ValueError('Standalone scripts require --base-url or COMFY_BASE_URL.')
     session = requests.Session()
     response = session.post(BASE + '/login', data={'username': os.environ['COMFY_USERNAME'], 'password': os.environ['COMFY_PASSWORD']}, timeout=30)
     response.raise_for_status()
@@ -30,10 +44,13 @@ def login():
 
 def submit(args):
     assert not (RUN / 'submission-intent.json').exists(), 'Intent exists. Never automatically resubmit; poll/reconcile existing job.'
-    s = login()
     assert args.workflow and args.face and args.garment and args.prompt and args.pid, 'Submit requires workflow, face, garment, prompt, PID'
     assert len(args.pid)==19 and args.pid.isdecimal(), 'PID must be an exact 19-digit string'
+    for name in ('workflow', 'face', 'garment', 'prompt'):
+        if not getattr(args, name).is_file():
+            raise ValueError(f'Missing {name} file: {getattr(args, name)}')
     workflow = json.loads(args.workflow.read_text(encoding='utf-8'))
+    s = login()
     for node, path in [('79', args.face), ('78', args.garment)]:
         with path.open('rb') as f:
             r = s.post(BASE + '/upload/image', files={'image': (f'tiktok-{args.pid}-{node}.jpg', f, 'image/jpeg')}, data={'type':'input', 'overwrite':'false'}, timeout=90)
@@ -64,9 +81,12 @@ def submit(args):
         os.fsync(f.fileno())
     status('submitting', fingerprint=fingerprint)
     r = s.post(BASE + '/prompt', json={'prompt':workflow, 'client_id':intent['client_id']}, timeout=120)
+    if r.status_code != 200:
+        status('submission_rejected', errors=[{'status':r.status_code, 'detail':r.text[:500]}])
+        raise ValueError(f'Video submission rejected (HTTP {r.status_code}): {r.text[:500]}')
     response = r.json()
     save('submission-response.json', response)
-    if r.status_code != 200 or not response.get('prompt_id'):
+    if not response.get('prompt_id'):
         status('submission_rejected', errors=[{'status':r.status_code, 'response_file':'submission-response.json'}])
         print('Submission rejected; inspect saved response. No retry.')
         return

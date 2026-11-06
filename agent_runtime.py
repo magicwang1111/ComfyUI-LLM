@@ -19,7 +19,7 @@ from agents import (
 )
 from agents.lifecycle import RunHooksBase
 
-from .artifact_store import _is_within
+from .artifact_store import _is_within, redact_task_credentials, safe_error_message
 from .image_tools import (
     DEFAULT_IMAGE_MODEL,
     compose_contact_sheet,
@@ -465,7 +465,7 @@ class AgentRuntime:
             return json.dumps([str(path) for path in input_paths], ensure_ascii=False)
 
         async def read_skill_resource(relative_path: str) -> str:
-            """Read a reference file belonging to the selected skill."""
+            """Read a file or list a directory in the selected skill; use '.' to list its root."""
             runtime._record(
                 "tool_start",
                 f"正在读取 Skill 参考资料：{relative_path}",
@@ -693,8 +693,8 @@ class AgentRuntime:
                 raise ValueError("Skill script exceeded the 300 second timeout.")
             result = {
                 "returncode": process.returncode,
-                "stdout": stdout.decode("utf-8", errors="replace")[:10000],
-                "stderr": stderr.decode("utf-8", errors="replace")[:10000],
+                "stdout": redact_task_credentials(stdout.decode("utf-8", errors="replace"))[:10000],
+                "stderr": redact_task_credentials(stderr.decode("utf-8", errors="replace"))[:10000],
             }
             output_flag = "--output"
             is_tiktok_video = skill.path.name == "tiktok-fashion-video" and script.name == "download_video.py"
@@ -733,9 +733,13 @@ class AgentRuntime:
                         )
                         runtime.script_output_paths.add(str(output_path))
                         result["artifact"] = record.disk_dict()
+            message = f"Skill 脚本执行完成：{script.name}"
+            if process.returncode != 0:
+                detail = safe_error_message(RuntimeError((result["stderr"] or result["stdout"]).strip()[-400:]))
+                message = f"Skill 脚本执行失败：{script.name}（退出码 {process.returncode}）\n{detail}"
             runtime._record(
-                "tool_end",
-                f"Skill 脚本执行完成：{script.name}",
+                "tool_error" if process.returncode != 0 else "tool_end",
+                message,
                 tool="run_skill_script",
                 script=script.name,
                 returncode=process.returncode,
@@ -829,7 +833,13 @@ Finish with a concise Chinese summary. Do not expose credentials or signed URL q
             item.kind == "output" and item.status == "success" and item.content_type.startswith("video/")
             for item in self.artifact_store.records
         ):
-            raise ValueError(f"Skill {skill.name} 未生成任何视频产物，请检查视频下载步骤。")
+            explanation = str(result.final_output or "").strip()
+            if explanation:
+                self._record("status", explanation)
+            raise ValueError(
+                f"Skill {skill.name} 未生成任何视频产物。\n"
+                + (f"Agent 说明：{explanation}" if explanation else "请检查上方脚本执行日志。")
+            )
         if not text_only and not video_delivery and not image_outputs:
             raise ValueError(
                 f"Skill {skill.name} 未生成任何图片产物，任务已终止，不会返回黑色占位图。"

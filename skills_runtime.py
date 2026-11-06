@@ -18,8 +18,18 @@ class SkillDefinition:
 
     def read_resource(self, relative_path):
         resource = (self.path / relative_path).resolve()
-        if self.path.resolve() not in resource.parents or not resource.is_file():
+        root = self.path.resolve()
+        if resource != root and root not in resource.parents:
             raise ValueError(f"Skill resource is not allowed: {relative_path}")
+        if resource.is_dir():
+            return "\n".join(
+                child.name + ("/" if child.is_dir() else "")
+                for child in sorted(resource.iterdir())
+                if not child.name.startswith(".") and child.name != "__pycache__"
+                and root in child.resolve().parents
+            )
+        if not resource.is_file():
+            raise ValueError(f"Skill resource does not exist: {relative_path}. Read its parent directory to list available resources.")
         return resource.read_text(encoding="utf-8")
 
 

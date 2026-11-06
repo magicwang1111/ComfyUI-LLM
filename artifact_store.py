@@ -13,8 +13,13 @@ from uuid import uuid4
 ROOT_DIR = Path(__file__).resolve().parent
 
 
+def redact_task_credentials(value):
+    token = os.environ.get("COMFY_TASK_TOKEN")
+    return value.replace(token, "<redacted>") if token else value
+
+
 def safe_error_message(exc):
-    message = f"{type(exc).__name__}: {str(exc)[:1000]}"
+    message = f"{type(exc).__name__}: {redact_task_credentials(str(exc))[:1000]}"
     message = re.sub(r"(https?://[^\s?]+)\?[^\s]+", r"\1?<redacted>", message)
     message = re.sub(
         r"(?i)(access[_-]?key(?:[_-]?(?:id|secret))?|session[_-]?token|signature)\s*[=:]\s*[^\s,;]+",

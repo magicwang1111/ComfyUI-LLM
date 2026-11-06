@@ -98,8 +98,20 @@ class AgentVideoTests(unittest.TestCase):
                 self.assertIsNone(run.call_args.args[0].model_settings.tool_choice)
                 self.assertIn("video artifacts required", run.call_args.args[0].instructions)
                 runtime.artifact_store.records = []
-                with self.assertRaisesRegex(ValueError, "未生成任何视频"):
+                run.return_value = SimpleNamespace(final_output="缺少已验证的商品图和视频服务登录配置。")
+                with self.assertRaisesRegex(ValueError, "缺少已验证的商品图"):
                     asyncio.run(runtime.execute("生成视频", decision, []))
+                self.assertEqual(runtime.events[-1]["message"], run.return_value.final_output)
+
+            (scripts / "fail.py").write_text(
+                "import sys\nprint('Missing workflow file', file=sys.stderr)\nsys.exit(2)\n",
+                encoding="utf-8",
+            )
+            failed_arguments = json.dumps({"script_name": "fail.py", "arguments": []})
+            failed = json.loads(asyncio.run(script_tool.on_invoke_tool(context, failed_arguments)))
+            self.assertEqual(failed["returncode"], 2)
+            self.assertEqual(runtime.events[-1]["event"], "tool_error")
+            self.assertIn("Missing workflow file", runtime.events[-1]["message"])
 
     def test_agent_exposes_all_successful_videos_and_persists_video_delivery(self):
         with tempfile.TemporaryDirectory() as temp:

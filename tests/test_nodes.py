@@ -52,7 +52,7 @@ class FakeAgentWorkerClient:
     def __init__(self, *args, **kwargs):
         pass
 
-    async def run(self, job, work_dir, on_event=None):
+    async def run(self, job, work_dir, on_event=None, task_environment=None):
         artifact_store = import_module("artifact_store")
         store = artifact_store.LocalArtifactStore(
             job["output_root"],
@@ -95,7 +95,7 @@ class FakeTextAgentWorkerClient:
     def __init__(self, *args, **kwargs):
         pass
 
-    async def run(self, job, work_dir, on_event=None):
+    async def run(self, job, work_dir, on_event=None, task_environment=None):
         return {
             "status": "completed",
             "route": {
@@ -125,9 +125,9 @@ class FakeTextAgentWorkerClient:
 class CapturingAgentWorkerClient(FakeAgentWorkerClient):
     last_job = None
 
-    async def run(self, job, work_dir, on_event=None):
+    async def run(self, job, work_dir, on_event=None, task_environment=None):
         type(self).last_job = job
-        return await super().run(job, work_dir, on_event=on_event)
+        return await super().run(job, work_dir, on_event=on_event, task_environment=task_environment)
 
 
 class NodeTests(unittest.TestCase):

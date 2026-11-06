@@ -10,6 +10,20 @@ ROOT_DIR = Path(__file__).resolve().parent
 EVENT_PREFIX = "__COMFYUI_LLM_EVENT__"
 
 
+def current_task_environment():
+    try:
+        from server import PromptServer
+    except ImportError:
+        return {"COMFY_TASK_AUTH_ERROR": "Account Manager is unavailable; cannot identify the task owner."}
+    provider = getattr(PromptServer.instance, "account_manager_task_environment", None)
+    if provider is None:
+        return {"COMFY_TASK_AUTH_ERROR": "Update Account Manager to support the current task's account."}
+    try:
+        return provider()
+    except ValueError as exc:
+        return {"COMFY_TASK_AUTH_ERROR": str(exc)}
+
+
 def _isolated_python_path(root=ROOT_DIR, platform_name=os.name):
     if platform_name == "nt":
         return root / ".agent_env" / "Scripts" / "python.exe"
@@ -38,7 +52,7 @@ class AgentWorkerClient:
                 "to a valid Python executable."
             )
 
-    async def run(self, job, work_dir, on_event=None):
+    async def run(self, job, work_dir, on_event=None, task_environment=None):
         self.validate()
         work_dir = Path(work_dir).resolve()
         token = uuid4().hex
@@ -46,7 +60,14 @@ class AgentWorkerClient:
         result_path = work_dir / f".agent_result_{token}.json"
         request_path.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
         env = os.environ.copy()
+        for name in ("COMFY_USERNAME", "COMFY_PASSWORD", "COMFY_BASE_URL", "COMFY_TASK_TOKEN", "COMFY_TASK_BASE_URL", "COMFY_TASK_AUTH_ERROR"):
+            env.pop(name, None)
+        env.update(task_environment or {"COMFY_TASK_AUTH_ERROR": "No authenticated task owner was provided."})
         env["PYTHONUTF8"] = "1"
+        def redact(text):
+            task_token = env.get("COMFY_TASK_TOKEN")
+            return text.replace(task_token, "<redacted>") if task_token else text
+
         process = None
         try:
             process = await asyncio.create_subprocess_exec(
@@ -67,7 +88,7 @@ class AgentWorkerClient:
                     line = await process.stdout.readline()
                     if not line:
                         break
-                    text = line.decode("utf-8", errors="replace").rstrip()
+                    text = redact(line.decode("utf-8", errors="replace").rstrip())
                     if text.startswith(EVENT_PREFIX):
                         try:
                             event = json.loads(text[len(EVENT_PREFIX) :])
@@ -83,7 +104,7 @@ class AgentWorkerClient:
                     line = await process.stderr.readline()
                     if not line:
                         break
-                    stderr_lines.append(line.decode("utf-8", errors="replace").rstrip())
+                    stderr_lines.append(redact(line.decode("utf-8", errors="replace").rstrip()))
 
             stdout_task = asyncio.create_task(read_stdout())
             stderr_task = asyncio.create_task(read_stderr())
@@ -107,7 +128,7 @@ class AgentWorkerClient:
             if not result_path.is_file():
                 detail = "\n".join(stdout_lines)[-1000:].strip()
                 raise ValueError(f"Agent SDK worker did not return a result: {detail}")
-            result = json.loads(result_path.read_text(encoding="utf-8"))
+            result = json.loads(redact(result_path.read_text(encoding="utf-8")))
             if result.get("error"):
                 raise ValueError(result["error"])
             return result

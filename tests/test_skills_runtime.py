@@ -23,6 +23,17 @@ class SkillRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not allowed"):
             skill.read_resource("../../../../config.local.json")
 
+    def test_resource_lists_real_directories_and_explains_missing_files(self):
+        skill = skills_runtime.SkillRegistry().get("tiktok-fashion-video")
+        self.assertIn("scripts/", skill.read_resource("."))
+        scripts = skill.read_resource("scripts").splitlines()
+        self.assertIn("run.py", scripts)
+        self.assertNotIn("__pycache__/", scripts)
+        with self.assertRaisesRegex(ValueError, "does not exist"):
+            skill.read_resource("scripts/prepare_run.py")
+        with self.assertRaisesRegex(ValueError, "not allowed"):
+            skill.read_resource("..")
+
     def test_bad_and_duplicate_skills_are_isolated(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
