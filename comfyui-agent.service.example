@@ -1,0 +1,30 @@
+[Unit]
+Description=Independent ComfyUI Agent orchestration
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/ComfyUI/custom_nodes/ComfyUI-LLM
+Environment=PYTHONUTF8=1
+Environment=PYTHONUNBUFFERED=1
+Environment=OMP_NUM_THREADS=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=MKL_NUM_THREADS=1
+Environment=NUMEXPR_NUM_THREADS=1
+ExecStart=/mnt/miniconda/envs/comfyui/bin/python /mnt/ComfyUI/custom_nodes/ComfyUI-LLM/agent_service.py --port 8195 --base-url http://127.0.0.1:8180 --min-available-memory-mb 3072
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group
+UMask=0077
+MemoryAccounting=yes
+MemoryHigh=2G
+MemoryMax=3G
+CPUAccounting=yes
+CPUQuota=200%
+TasksMax=256
+OOMPolicy=kill
+
+[Install]
+WantedBy=multi-user.target

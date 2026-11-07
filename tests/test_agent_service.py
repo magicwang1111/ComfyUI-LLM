@@ -46,6 +46,16 @@ class IndependentNodeTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_low_memory_pauses_claims_without_losing_queued_jobs(self):
+        service = service_module.AgentService('http://127.0.0.1:8180', b'secret', None, 3072)
+        service.request = AsyncMock()
+        with patch.object(service_module, 'available_memory_mb', return_value=2048), \
+                patch.object(service_module.asyncio, 'sleep', side_effect=asyncio.CancelledError):
+            with self.assertRaises(asyncio.CancelledError):
+                await service.poll()
+        service.request.assert_not_called()
+        self.assertTrue(service.waiting_for_memory)
+
     async def test_signed_service_to_manager_and_result_delivery(self):
         manager = Path(__file__).resolve().parents[2] / 'ComfyUI-Account-Manager' / 'utils'
         if not manager.is_dir():

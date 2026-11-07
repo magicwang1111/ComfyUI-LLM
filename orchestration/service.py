@@ -22,12 +22,14 @@ EVENT_KEYS = {'event', 'message', 'tool', 'count', 'input_count', 'output_count'
 
 
 class AgentService:
-    def __init__(self, base_url, secret, client):
+    def __init__(self, base_url, secret, client, min_available_memory_mb=0):
         self.base_url = base_url.rstrip('/')
         self.secret = secret
         self.client = client
         self.running = set()
         self.last_contact = 0
+        self.min_available_memory_mb = min_available_memory_mb
+        self.waiting_for_memory = False
 
     async def request(self, payload):
         body = json.dumps(payload).encode()
@@ -112,6 +114,13 @@ class AgentService:
         try:
             while True:
                 try:
+                    self.waiting_for_memory = bool(
+                        self.min_available_memory_mb
+                        and available_memory_mb() < self.min_available_memory_mb
+                    )
+                    if self.waiting_for_memory:
+                        await asyncio.sleep(5)
+                        continue
                     task = await self.request({'action': 'claim'})
                     if task:
                         pending = asyncio.create_task(self.execute(task))
@@ -131,8 +140,10 @@ class AgentService:
         try:
             await asyncio.wait_for(reader.readuntil(b'\r\n\r\n'), timeout=5)
             healthy = time.time() - self.last_contact < 30
-            body = json.dumps({'status': 'ok' if healthy else 'disconnected', 'running': len(self.running)}).encode()
-            status = b'200 OK' if healthy else b'503 Service Unavailable'
+            state = 'waiting_for_memory' if self.waiting_for_memory else ('ok' if healthy else 'disconnected')
+            body = json.dumps({'status': state, 'running': len(self.running),
+                               'min_available_memory_mb': self.min_available_memory_mb}).encode()
+            status = b'200 OK' if healthy or self.waiting_for_memory else b'503 Service Unavailable'
             writer.write(b'HTTP/1.1 ' + status + b'\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: '
                          + str(len(body)).encode() + b'\r\n\r\n' + body)
             await writer.drain()
@@ -143,11 +154,23 @@ class AgentService:
             await writer.wait_closed()
 
 
+def available_memory_mb():
+    path = Path('/proc/meminfo')
+    if not path.is_file():
+        raise ValueError('--min-available-memory-mb requires Linux /proc/meminfo')
+    for line in path.read_text().splitlines():
+        if line.startswith('MemAvailable:'):
+            return int(line.split()[1]) / 1024
+    raise ValueError('MemAvailable is missing from /proc/meminfo')
+
+
 def parser():
     result = argparse.ArgumentParser(description='Run Agent orchestration outside ComfyUI workers')
     result.add_argument('--base-url', default='http://127.0.0.1:8180', help='Existing Account Manager ingress')
     result.add_argument('--port', type=int, default=8195, help='Local health endpoint (8180–8190 reserved)')
     result.add_argument('--secret-file', type=Path, default=None)
+    result.add_argument('--min-available-memory-mb', type=int, default=0,
+                        help='Linux: pause new Agent claims below this available-memory threshold')
     return result
 
 
@@ -156,6 +179,10 @@ async def serve(args):
         raise ValueError('Agent service port must be outside 8180–8190 (default: 8195).')
     if not args.base_url.startswith(('http://127.0.0.1:', 'http://localhost:')):
         raise ValueError('This single-machine service requires a loopback Account Manager URL.')
+    if args.min_available_memory_mb < 0:
+        raise ValueError('Available-memory threshold must not be negative')
+    if args.min_available_memory_mb:
+        available_memory_mb()
     manager = ROOT.parent / 'ComfyUI-Account-Manager'
     config_path = manager / 'config.json'
     manager_config = json.loads(config_path.read_text(encoding='utf-8')) if config_path.exists() else {}
@@ -164,7 +191,7 @@ async def serve(args):
     if not secret:
         raise ValueError('Empty Account Manager scheduler secret')
     async with httpx.AsyncClient(timeout=20, trust_env=False) as client:
-        service = AgentService(args.base_url, secret, client)
+        service = AgentService(args.base_url, secret, client, args.min_available_memory_mb)
         # Bind before claiming any task, so an occupied health port fails without starting work.
         server = await asyncio.start_server(service.health, '127.0.0.1', args.port)
         LOG.info('Agent service health: http://127.0.0.1:%s; Account Manager: %s', args.port, args.base_url)

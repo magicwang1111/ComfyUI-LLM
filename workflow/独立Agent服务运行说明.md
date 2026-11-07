@@ -53,6 +53,10 @@ Agent 等待视频期间占一个独立 Agent 并发额度，不占 ComfyUI 实�
 
 任务、租约、日志、子任务关联和结果保存在 Account Manager 的 SQLite 数据库中。服务每 5 秒续约，租约 90 秒；联系后台超过 60 秒失败时停止 Agent，避免失联后继续操作。任务凭据只传入子进程环境，绑定 owner、任务和租约；任务结束后失效。
 
+Linux 内存较紧张时，可以追加 `--min-available-memory-mb 3072`：系统可用内存不足 3 GiB 时暂停领取新任务，已有任务继续执行；健康接口显示 `waiting_for_memory`，内存恢复后自动继续。默认值 0 表示不启用此项。
+
+仓库提供 `comfyui-agent.service.example`，示例将独立服务及其所有子进程合计限制为 `MemoryHigh=2G`、`MemoryMax=3G`、`CPUQuota=200%` 和 `TasksMax=256`。按实际 Python 和插件路径调整后交给 systemd 管理。超过内存硬上限可能终止该组 Agent，任务将通过租约进入待恢复状态；它不限制独立运行的 ComfyUI 视频实例。并发数仍需在 Account Manager 配置，内存上限不能替代并发限制。
+
 ## 中断与恢复
 
 - 正常取消会停止 Agent 及其本地子进程，移除尚未执行的视频，并向已运行视频发送定向中断请求。供应商已接受的视频可能继续运行和计费，面板继续展示其实际状态。
