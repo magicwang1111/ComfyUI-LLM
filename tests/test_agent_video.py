@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import io
 import json
 import sys
 import tempfile
@@ -10,6 +12,8 @@ from unittest.mock import AsyncMock, patch
 import av
 import numpy as np
 from agents.tool_context import ToolContext
+from agents.items import ItemHelpers
+from PIL import Image
 
 from _loader import import_module
 
@@ -38,6 +42,58 @@ class AgentVideoTests(unittest.TestCase):
             result = json.loads(asyncio.run(tool.on_invoke_tool(context, arguments)))
             self.assertEqual(result['returncode'], 0)
             self.assertEqual(json.loads(result['stdout']), ['--duration', '15', 'prepare', '--rules-file', 'alternate.md'])
+
+    def test_view_downloaded_original_returns_visible_image_without_registering_output(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            runtime = runtime_module.AgentRuntime.__new__(runtime_module.AgentRuntime)
+            runtime.artifact_store = artifact_store.LocalArtifactStore(root / "outputs", flat_outputs=True)
+            runtime.events = []
+            runtime.event_callback = None
+            original = runtime.artifact_store.outputs_dir / "run" / "product" / "01.jpg"
+            original.parent.mkdir(parents=True)
+            exif = Image.Exif()
+            exif[274] = 6
+            Image.new("RGB", (60, 30), "red").save(original, exif=exif)
+            face = root / "face.png"
+            Image.new("RGB", (20, 40), "blue").save(face)
+            skill = SimpleNamespace(name="tiktok-fashion-video", path=root)
+            view = next(tool for tool in runtime._tools(skill, [face]) if tool.name == "view_image")
+
+            for path, dimensions in ((original, (30, 60)), (face, (20, 40)), ("run/product/01.jpg", (30, 60))):
+                with self.subTest(path=path):
+                    arguments = json.dumps({"path": str(path)})
+                    context = ToolContext(None, tool_name="view_image", tool_call_id="view", tool_arguments=arguments)
+                    result = asyncio.run(view.on_invoke_tool(context, arguments))
+                    output = ItemHelpers.tool_call_output_item(SimpleNamespace(call_id="view"), result)["output"]
+                    self.assertEqual([item["type"] for item in output], ["input_text", "input_image"])
+                    metadata = json.loads(output[0]["text"])
+                    self.assertEqual((metadata["width"], metadata["height"]), dimensions)
+                    self.assertEqual(output[1]["detail"], "high")
+                    raw = base64.b64decode(output[1]["image_url"].split(",", 1)[1])
+                    with Image.open(io.BytesIO(raw)) as preview:
+                        self.assertEqual(preview.size, dimensions)
+            self.assertEqual(runtime.artifact_store.records, [])
+            self.assertNotIn("base64", json.dumps(runtime.events))
+
+            other = root / "other-job.png"
+            Image.new("RGB", (10, 10)).save(other)
+            for path in (other, "../other-job.png"):
+                with self.subTest(blocked=path):
+                    arguments = json.dumps({"path": str(path)})
+                    context = ToolContext(None, tool_name="view_image", tool_call_id="blocked", tool_arguments=arguments)
+                    result = asyncio.run(view.on_invoke_tool(context, arguments))
+                    self.assertIn("Image path must be a task input", result)
+            link = original.parent / "outside.png"
+            try:
+                link.symlink_to(other)
+            except OSError:
+                pass  # Windows may not grant symlink creation permission.
+            else:
+                arguments = json.dumps({"path": str(link)})
+                context = ToolContext(None, tool_name="view_image", tool_call_id="symlink", tool_arguments=arguments)
+                self.assertIn("Image path must be a task input", asyncio.run(view.on_invoke_tool(context, arguments)))
+            self.assertNotIn("view_image", [tool.name for tool in runtime._tools(SimpleNamespace(name="fashion-model-outfit-swap", path=root), [])])
 
     @unittest.skipIf(nodes.InputImpl is None, "Requires the ComfyUI native video API")
     def test_native_video_save_preserves_video_and_audio_streams(self):
@@ -117,6 +173,9 @@ class AgentVideoTests(unittest.TestCase):
                 self.assertIsNone(run.call_args.args[0].model_settings.tool_choice)
                 self.assertIn("video artifacts required", run.call_args.args[0].instructions)
                 self.assertIn(runtime_module.rules_instruction(), run.call_args.args[0].instructions)
+                self.assertIn("view_image(path)", run.call_args.args[0].instructions)
+                self.assertNotIn("Retry only when a concrete defect", run.call_args.args[0].instructions)
+                self.assertIn("view_image", [tool.name for tool in run.call_args.args[0].tools])
                 runtime.artifact_store.records = []
                 run.return_value = SimpleNamespace(final_output="缺少已验证的商品图和视频服务登录配置。")
                 with self.assertRaisesRegex(ValueError, "缺少已验证的商品图"):

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from openai import AsyncOpenAI
-from PIL import Image
+from PIL import Image, ImageOps
 from pydantic import BaseModel, Field
 
 from agents import (
@@ -14,6 +14,8 @@ from agents import (
     OpenAIResponsesModel,
     RunConfig,
     Runner,
+    ToolOutputImage,
+    ToolOutputText,
     function_tool,
     set_tracing_disabled,
 )
@@ -481,6 +483,26 @@ class AgentRuntime:
             )
             return text[:50000]
 
+        async def view_image(path: str) -> list[ToolOutputText | ToolOutputImage]:
+            """View an actual local image: product contact sheet, downloaded original, crop or task input. Pass its full path; returns visible image content and original dimensions for choosing normalized crop bounds."""
+            image_path = Path(path).expanduser()
+            if not image_path.is_absolute():
+                image_path = runtime.artifact_store.outputs_dir / image_path
+            image_path = image_path.resolve()
+            if image_path not in {Path(item).resolve() for item in input_paths} and not _is_within(
+                image_path, [runtime.artifact_store.outputs_dir]
+            ):
+                raise ValueError("Image path must be a task input or inside this task's output directory.")
+            runtime._record("tool_start", f"正在查看图片：{image_path.name}", tool="view_image")
+            with Image.open(image_path) as source:
+                width, height = ImageOps.exif_transpose(source).size
+            preview = image_data_url(image_path, max_edge=2048)
+            runtime._record("tool_end", f"图片已读取：{image_path.name}", tool="view_image")
+            return [
+                ToolOutputText(text=json.dumps({"path": str(image_path), "width": width, "height": height}, ensure_ascii=False)),
+                ToolOutputImage(image_url=preview, detail="high"),
+            ]
+
         async def generate_image(prompt: str, n: int, size: str, output_name: str) -> str:
             """Generate images with the configured image model and save final PNG files."""
             runtime._record(
@@ -753,7 +775,7 @@ class AgentRuntime:
             )
             return json.dumps(result, ensure_ascii=False)
 
-        return [
+        tools = [
             function_tool(list_input_files),
             function_tool(read_skill_resource),
             function_tool(generate_image),
@@ -762,6 +784,9 @@ class AgentRuntime:
             function_tool(make_contact_sheet),
             function_tool(run_skill_script),
         ]
+        if getattr(skill, "name", "") == "tiktok-fashion-video":
+            tools.append(function_tool(view_image))
+        return tools
 
     async def execute(self, prompt, decision, image_paths):
         skill = self.registry.get(decision.skill_name)
@@ -772,6 +797,14 @@ class AgentRuntime:
             "edit_images" if image_paths else "generate_image"
         )
         review_instruction = (
+            "Use view_image(path) to see downloaded product images directly. After collect_product.py, "
+            "view its contact_sheet and the chosen original from its images list before choosing crop bounds; "
+            "then view the crop returned by crop_garment.py. Paths may be unregistered files inside this task's "
+            "output directory or exact task inputs. inspect_generated_image can also review registered "
+            "reference artifacts by filename. These tools are available before any image or video generation. "
+            "Use gemini_qc.py for the completed video's audio/visual review. Preserve the video even if QC fails; "
+            "do not resubmit paid generation for quality defects without user authorization."
+            if skill.name == "tiktok-fashion-video" else
             "For this fast-path skill, read the requested outfit/image count as dynamic N. "
             "Create N materially different outfit plans, then make N independent image-tool "
             "calls with output_count=1; each call must receive a self-contained prompt for "

@@ -145,7 +145,7 @@ def save_input_images(images, target_dir, start_index=1):
 
 def image_data_url(path, max_edge=1024):
     with Image.open(path) as image:
-        image = image.convert("RGB")
+        image = ImageOps.exif_transpose(image).convert("RGB")
         image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
         output = io.BytesIO()
         image.save(output, format="JPEG", quality=85)
