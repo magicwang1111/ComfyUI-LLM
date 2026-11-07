@@ -1,5 +1,7 @@
 # Verified 2026-11-06 run
 
+This is historical evidence. Current tasks use script sections 7/8 for body copy and separate posting rules for captions/tags; completed videos await human confirmation without automatic Gemini QC.
+
 Evidence: `D:/ComfyUI/custom_nodes/ComfyUI-LLM/output/tiktok-linux-verification/run-20261106/RESULT.md` and sibling JSON files.
 
 - PID `1732252792104194121`, title `BloomChic A-Line Pockets V-Neck Pullover 【M-6XL】`. Parent recovered exact PID from BC bnmb B15 and uniquely verified TikTok. Damaged `1732252792104190000` was not used.

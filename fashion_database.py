@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+if __package__:
+    from .fashion_prompt import read_generation_copy
+else:
+    from fashion_prompt import read_generation_copy
+
 ROOT = Path(__file__).resolve().parent
 NS = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
 DOCREL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -216,6 +221,7 @@ def record_generation(path, run_dir, artifact, sheet, publication=None, publicat
         raise ValueError('Generation and product PID do not match.')
     qc_path = run / 'qc.json'
     qc = json.loads(qc_path.read_text(encoding='utf-8')) if qc_path.exists() else {}
+    copy = read_generation_copy(run)
     first = min(manifest['images'], key=lambda item: item['index'])
     photo = (run / 'product' / first['file']).resolve()
     if not photo.is_relative_to((run / 'product').resolve()):
@@ -233,9 +239,10 @@ def record_generation(path, run_dir, artifact, sheet, publication=None, publicat
                 raise ValueError('An existing generation ID belongs to another PID.')
             values = json.loads(existing['values_json'])
             previous = json.loads(existing['metadata_json'])
-            if qc:
-                values.update(G=qc.get('translation_chinese', ''), H=qc.get('transcript_english', ''),
-                              J=qc.get('caption_english', ''), K=' '.join(qc.get('hashtags', [])))
+            if (run / 'prompt.txt').exists():
+                values.update(G=copy['chinese'], H=copy['english'])
+            if (run / 'post-copy.json').exists():
+                values.update(J=copy['caption_english'], K=' '.join(copy['hashtags']))
             if publication:
                 values['I'] = publication['url']
             metadata['qc'] = qc or previous.get('qc', {})
@@ -249,9 +256,9 @@ def record_generation(path, run_dir, artifact, sheet, publication=None, publicat
         match = re.fullmatch(r'([A-Za-z]+)([0-9]+)', last['sequence'])
         sequence = match[1] + str(int(match[2]) + 1)
         values = {k: '' for k in 'ABCDEFGHIJKLMN'}
-        values.update(A=sequence, B=pid, C=product['title'], G=qc.get('translation_chinese', ''),
-                      H=qc.get('transcript_english', ''), I=(publication or {}).get('url') or artifact.get('oss_uri', ''),
-                      J=qc.get('caption_english', ''), K=' '.join(qc.get('hashtags', [])))
+        values.update(A=sequence, B=pid, C=product['title'], G=copy['chinese'],
+                      H=copy['english'], I=(publication or {}).get('url') or artifact.get('oss_uri', ''),
+                      J=copy['caption_english'], K=' '.join(copy['hashtags']))
         cursor = db.execute('''INSERT INTO videos(sheet,sequence,pid,values_json,generation_id,metadata_json,photo,photo_mime,created_at)
                                VALUES(?,?,?,?,?,?,?,?,?)''',
                             (sheet, sequence, pid, json.dumps(values, ensure_ascii=False), job['prompt_id'],

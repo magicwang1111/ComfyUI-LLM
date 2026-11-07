@@ -29,17 +29,16 @@ Review existing intents for the product/run before submission. The helper guards
 
 The generalized CLI wraps the real run's submission path. Polling and existing-intent prevention were checked after parameterization; no second paid submit tested the CLI.
 
-## Analysis and publication
+## Human review and publication
 
 ```text
-python scripts/gemini_qc.py --video RUN/final.mp4 --face FACE.jpg --garment CROP.jpg --config CONFIG.json --output RUN/gemini-response.json --model gemini-3.8-flash --base-url https://api.vapeur.ai/gemini/v1beta
 python scripts/publish_oss.py --video RUN/final.mp4 --config CONFIG.json --key Goumee-ComfyUI-Server-Data/public/servers/HOST/tiktok-fashion/RUN/PID/JOB.mp4 --output RUN/publication.json
 ```
 
-Gemini uses `x-goog-api-key` with full MP4 and separate reference photos. Verified usage included AUDIO and VIDEO modalities. Analysis failure does not authorize video regeneration. Existing analysis responses are guarded against overwrite.
+The automatic workflow ends video processing after download and returns the video for human confirmation. Do not call Gemini for audio/visual QC, transcription, captions or tags. Historical Gemini helpers and run evidence are not instructions to execute them in new tasks.
 
 The publisher changes only the new object's ACL to public-read, never bucket ACL. Existing-key reuse requires matching SHA-256 metadata; public GET verifies exact bytes. Configure the authorized bucket/endpoint. Custom-domain and STS-only setups were not tested.
 
-Raw Gemini `overall_pass` may disagree with shot-count/speech defects. Keep a separate review of concrete deviations and preserve `[unclear]`. PyAV establishes actual duration, fps, dimensions and audio and writes the workbook-compatible `ffprobe.json`; prompts do not. Rerun `download_video.py --run-dir RUN` to inspect/register an existing MP4 without downloading or generating again.
+PyAV reads duration, fps, dimensions and audio metadata locally into `ffprobe.json`; this is not an AI quality review. Rerun `download_video.py --run-dir RUN` to register an existing MP4 without downloading or generating again.
 
-QC preserves the original MP4 and uses a full-length compressed copy when the inline request exceeds 12 MiB. HTTP 413 gets a smaller copy, while 429, 500/502/503/504 and connection/timeouts get bounded backoff. There are at most three HTTP attempts per invocation; authentication/other permanent errors stop immediately. Attempt metadata is saved beside the response. Do not add an outer retry loop. Reusing an existing raw response only parses it locally. Compression can limit visual detail; report that uncertainty rather than claiming the original has a compression defect.
+The database receives section 8/7 of `prompt.txt` as Chinese/English body copy and `post-copy.json` as the posting caption and hashtags. Prepare posting copy using `workflow/TikTok发布文案与标签规则.md` before submission. Keep execution notes in their separate file and do not represent the planned script as a verified transcript.

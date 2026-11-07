@@ -360,6 +360,12 @@ The independent `tiktok-ops` backend owns the product/video database. Configure
 The node uses the authenticated executing account and submits generated videos
 through the API. The local outbox retries failures without regenerating videos.
 
+Chinese/English body copy comes directly from sections 8/7 of `prompt.txt`.
+Posting captions and hashtags are generated alongside the script using
+[editable posting rules](workflow/TikTok发布文案与标签规则.md) and saved in
+`post-copy.json`. Completed videos await human confirmation; the automatic
+TikTok workflow does not call Gemini for transcription or audio/visual QC.
+
 ```bash
 python database_cli.py lookup --pid 1731312562904010825
 python export_excel.py --output-dir data/exports

@@ -65,7 +65,7 @@ class TikTokRuntimeTests(unittest.TestCase):
             directory = Path(temp)
             (directory / 'product').mkdir()
             (directory / 'product/manifest.json').write_text(json.dumps({'pid': '1731259010175242313', 'title': 'Verified dress', 'source_url': 'https://example.com/product'}), encoding='utf-8')
-            args = SimpleNamespace(pid='1731259010175242313', prompt_text='Complete new product prompt', duration=15, model='3.0-prime', execution_notes='核验：商品标题匹配。\n去重范围：仅本商品历史。')
+            args = SimpleNamespace(pid='1731259010175242313', prompt_text='Complete new product prompt', duration=15, model='3.0-prime', execution_notes='核验：商品标题匹配。\n去重范围：仅本商品历史。', caption_text='Little details 💚', hashtags=['#OutfitInspo', '#CasualStyle'])
             original = run.WORKFLOW_TEMPLATE.read_bytes()
             with patch.object(run, 'RUN', directory), patch.object(run, 'login') as login:
                 run.prepare(args)
@@ -77,6 +77,11 @@ class TikTokRuntimeTests(unittest.TestCase):
                 notes_path = directory / 'execution-notes.md'
                 self.assertEqual(notes_path.read_text(encoding='utf-8'), args.execution_notes)
                 self.assertNotIn(args.execution_notes, json.dumps(rendered, ensure_ascii=False))
+                posting = json.loads((directory / 'post-copy.json').read_text(encoding='utf-8'))
+                self.assertEqual(posting['caption_english'], args.caption_text)
+                self.assertEqual(posting['hashtags'], args.hashtags)
+                self.assertEqual(posting['rules_file'], run.POST_COPY_RULES_PATH.name)
+                self.assertNotIn(args.caption_text, json.dumps(rendered, ensure_ascii=False))
                 review = json.loads((directory / 'prompt-review.json').read_text(encoding='utf-8'))
                 self.assertTrue(review['structure_warnings'])
                 self.assertTrue(review['semantic_review_required'])

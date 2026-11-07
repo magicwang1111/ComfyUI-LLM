@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from fashion_prompt import review_prompt
+from fashion_prompt import POST_COPY_RULES_PATH, review_prompt
 
 RUN = Path(__file__).resolve().parent
 BASE = os.environ.get('COMFY_TASK_BASE_URL') or os.environ.get('COMFY_BASE_URL', '')
@@ -57,6 +57,15 @@ def prepare(args):
     if not args.prompt_text or not args.prompt_text.strip():
         raise ValueError('Prepare requires the complete video prompt in --prompt-text.')
     duration = args.duration if args.duration is not None else 15
+    caption = getattr(args, 'caption_text', None)
+    hashtags = getattr(args, 'hashtags', None)
+    if caption is not None or hashtags is not None:
+        if not caption or not hashtags:
+            raise ValueError('Provide both --caption-text and --hashtags for the posting copy.')
+        rules = POST_COPY_RULES_PATH.read_text(encoding='utf-8-sig').strip()
+        save('post-copy.json', {'caption_english': caption, 'hashtags': hashtags,
+                               'rules_file': POST_COPY_RULES_PATH.name,
+                               'rules_sha256': hashlib.sha256(rules.encode('utf-8')).hexdigest()})
     notes_path = RUN / 'execution-notes.md'
     if getattr(args, 'execution_notes', None) is not None:
         notes_path.write_text(args.execution_notes, encoding='utf-8')
@@ -72,7 +81,7 @@ def prepare(args):
     (RUN / 'prompt.txt').write_text(args.prompt_text, encoding='utf-8')
     save('analysis.json', {'pid': args.pid, 'title': manifest['title'], 'source_url': manifest['source_url'], 'rules_file': report['rules_file']})
     status('prepared', pid=args.pid)
-    print(json.dumps({'stage': 'prepared', 'workflow': str(RUN / 'workflow.json'), 'prompt': str(RUN / 'prompt.txt'), 'execution_notes': str(notes_path) if notes_path.exists() else None, 'review': str(RUN / 'prompt-review.json'), 'structure_warnings': report['structure_warnings'], 'semantic_review_required': True}, ensure_ascii=False))
+    print(json.dumps({'stage': 'prepared', 'workflow': str(RUN / 'workflow.json'), 'prompt': str(RUN / 'prompt.txt'), 'post_copy': str(RUN / 'post-copy.json') if (RUN / 'post-copy.json').exists() else None, 'execution_notes': str(notes_path) if notes_path.exists() else None, 'review': str(RUN / 'prompt-review.json'), 'structure_warnings': report['structure_warnings'], 'semantic_review_required': True}, ensure_ascii=False))
 
 
 def submit(args):
@@ -177,6 +186,8 @@ if __name__ == '__main__':
     parser.add_argument('--prompt',type=Path)
     parser.add_argument('--prompt-text')
     parser.add_argument('--execution-notes', help='Product verification, crop selection, history scope and review notes; saved separately from the video prompt.')
+    parser.add_argument('--caption-text', help='English TikTok posting caption, generated using the posting rules.')
+    parser.add_argument('--hashtags', nargs='+', help='TikTok hashtags as separate arguments.')
     parser.add_argument('--rules-file', help='Markdown file inside workflow; submit inherits the prepared rules when omitted.')
     parser.add_argument('--wait-seconds',type=int,default=120)
     parser.add_argument('--pid')

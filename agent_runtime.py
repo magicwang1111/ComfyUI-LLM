@@ -23,7 +23,7 @@ from agents.lifecycle import RunHooksBase
 
 from .api_client import VapeurAsyncClient
 from .artifact_store import _is_within, redact_task_credentials, safe_error_message
-from .fashion_prompt import rules_instruction, select_rules_file
+from .fashion_prompt import post_copy_instruction, rules_instruction, select_rules_file
 from .image_tools import (
     DEFAULT_IMAGE_MODEL,
     compose_contact_sheet,
@@ -804,8 +804,9 @@ class AgentRuntime:
             "then view the crop returned by crop_garment.py. Paths may be unregistered files inside this task's "
             "output directory or exact task inputs. inspect_generated_image can also review registered "
             "reference artifacts by filename. These tools are available before any image or video generation. "
-            "Use gemini_qc.py for the completed video's audio/visual review. Preserve the video even if QC fails; "
-            "do not resubmit paid generation for quality defects without user authorization."
+            "After downloading the completed video, return it for human review without automated audio/visual QC. "
+            "Do not call Gemini or transcribe the video. Database speech comes directly from prompt.txt sections 7 and 8; "
+            "prepare the posting caption and hashtags using the separately supplied posting rules."
             if skill.name == "tiktok-fashion-video" else
             "For this fast-path skill, read the requested outfit/image count as dynamic N. "
             "Create N materially different outfit plans, then make N independent image-tool "
@@ -842,7 +843,7 @@ Finish with a concise Chinese summary. Do not expose credentials or signed URL q
 </runtime_contract>
 """
         rules_file = select_rules_file(prompt) if skill.name == "tiktok-fashion-video" else None
-        script_rules = rules_instruction(rules_file) if rules_file else ""
+        script_rules = rules_instruction(rules_file) + post_copy_instruction() if rules_file else ""
         agent = Agent(
             name=f"Skill: {skill.name}",
             instructions=skill.instructions + script_rules + contract,

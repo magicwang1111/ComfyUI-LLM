@@ -77,7 +77,9 @@ class FashionDatabaseTests(unittest.TestCase):
         (run / 'final.mp4').write_bytes(b'video')
         data = {'analysis.json': {'pid': PID, 'title': 'Verified blouse', 'source_url': 'https://shop.example/product/' + PID},
                 'product/manifest.json': {'pid': PID, 'images': [{'index': 1, 'file': '01.jpg', 'sha256': hashlib.sha256(self.photo).hexdigest()}]},
-                'job.json': {'prompt_id': f'job-{number}'}}
+                'job.json': {'prompt_id': f'job-{number}'},
+                'post-copy.json': {'caption_english': '=not a formula 💚', 'hashtags': ['#fashion']}}
+        (run / 'prompt.txt').write_text('7. 完整英文口播\nBlogger: Scripted speech\n\n8. 完整中文参考\n博主：脚本文案\n\n9. 整体表演要求\n保持自然', encoding='utf-8')
         if qc:
             data['qc.json'] = {'transcript_english': 'Actual speech', 'translation_chinese': '真实口播', 'caption_english': '=not a formula', 'hashtags': ['#fashion']}
         for name, value in data.items():
@@ -143,18 +145,50 @@ class FashionDatabaseTests(unittest.TestCase):
         self.assertEqual(len(catalog.lookup(target, PID)['videos']), 2)
         excel.export_excel(target, 'videos', self.root / 'restored.xlsx')
 
-    def test_missing_qc_is_recorded_without_invented_transcription(self):
+    def test_script_copy_is_recorded_without_qc_and_cannot_be_replaced_by_qc(self):
         run = self.make_run(qc=False)
         self.record(run)
         saved = catalog.lookup(self.db, PID)['videos'][-1]
-        self.assertEqual(saved['values']['H'], '')
+        self.assertEqual(saved['values']['H'], 'Blogger: Scripted speech')
+        self.assertEqual(saved['values']['G'], '博主：脚本文案')
+        self.assertEqual(saved['values']['J'], '=not a formula 💚')
         self.assertEqual(saved['metadata']['qc'], {})
         (run / 'qc.json').write_text(json.dumps({'transcript_english': 'Recovered speech'}))
         recovered = self.record(run)
         self.assertTrue(recovered['already_recorded'])
         records = catalog.lookup(self.db, PID)['videos']
         self.assertEqual(len(records), 2)
-        self.assertEqual(records[-1]['values']['H'], 'Recovered speech')
+        self.assertEqual(records[-1]['values']['H'], 'Blogger: Scripted speech')
+
+    def test_missing_script_does_not_fall_back_to_video_transcription(self):
+        run = self.make_run()
+        (run / 'prompt.txt').unlink()
+        (run / 'post-copy.json').unlink()
+        self.record(run)
+        values = catalog.lookup(self.db, PID)['videos'][-1]['values']
+        self.assertEqual([values[key] for key in ('G', 'H', 'J', 'K')], ['', '', '', ''])
+
+    def test_api_delivery_uses_script_and_post_copy_and_preserves_retry_envelope(self):
+        from _loader import import_module
+        api = import_module('ops_client')
+        run = self.make_run()
+        options = {'outbox': self.root / 'outbox.sqlite3', 'instance_id': 'cpu', 'sheet': 'bnmb'}
+        identity = {'external_user_id': 'actual-user', 'external_username': 'alice'}
+        artifact = {'path': str(run / 'final.mp4'), 'oss_uri': 'oss://bucket/video'}
+        with patch.object(api, 'flush') as flush:
+            api.record_generation(options, run, artifact, identity)
+            envelope = json.loads((run / 'ops-delivery.json').read_text(encoding='utf-8'))
+            values = envelope['values']
+            self.assertEqual(values['G'], '博主：脚本文案')
+            self.assertEqual(values['H'], 'Blogger: Scripted speech')
+            self.assertEqual(values['J'], '=not a formula 💚')
+            self.assertEqual(values['K'], '#fashion')
+            (run / 'prompt.txt').write_text('7. 完整英文口播\nChanged later', encoding='utf-8')
+            api.record_generation(options, run, artifact, identity)
+            self.assertEqual(json.loads((run / 'ops-delivery.json').read_text(encoding='utf-8')), envelope)
+            self.assertEqual(flush.call_count, 2)
+        with closing(api.queue_connect(options)) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM deliveries WHERE kind='video'").fetchone()[0], 1)
 
     def test_changed_verified_photo_is_rejected(self):
         run = self.make_run()

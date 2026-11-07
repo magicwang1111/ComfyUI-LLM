@@ -14,6 +14,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+if __package__:
+    from .fashion_prompt import read_generation_copy
+else:
+    from fashion_prompt import read_generation_copy
+
 ROOT = Path(__file__).resolve().parent
 
 
@@ -189,13 +194,14 @@ def record_generation(
         qc_path = run / "qc.json"
         qc = json.loads(qc_path.read_text(encoding="utf-8")) if qc_path.exists() else {}
         qc = qc | {"status": qc_status(qc)}
+        copy = read_generation_copy(run)
         values = {
             "C": product["title"],
-            "G": qc.get("translation_chinese", ""),
-            "H": qc.get("transcript_english", ""),
+            "G": copy["chinese"],
+            "H": copy["english"],
             "I": (publication or {}).get("url") or artifact.get("oss_uri", ""),
-            "J": qc.get("caption_english", ""),
-            "K": " ".join(qc.get("hashtags", [])),
+            "J": copy["caption_english"],
+            "K": " ".join(copy["hashtags"]),
         }
         payload = {
             "instance_id": options["instance_id"],

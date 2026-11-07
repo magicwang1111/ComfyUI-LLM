@@ -1,6 +1,7 @@
 import tempfile
 import subprocess
 import sys
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -103,6 +104,31 @@ class FashionPromptTests(unittest.TestCase):
     def test_speaker_labels_do_not_inflate_spoken_word_count(self):
         prompt = sample_prompt().replace('Look at this neckline!', 'Stranger: Look at this neckline!\nBlogger: Yes!')
         self.assertEqual(fashion.review_prompt(prompt)['english_word_count'], 5)
+
+    def test_database_copy_uses_only_script_sections_and_separate_posting_copy(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = Path(temp)
+            english = 'Stranger: Look at this neckline!\nBlogger: Yes!'
+            chinese = '朋友：看看这个领口！\n博主：对！'
+            for header7, header8, header9 in [('7. 完整英文口播', '8. 完整中文参考', '9. 整体表演要求'),
+                                             ('## 七、完整英文口播', '## 八、完整中文参考', '## 九、整体表演要求')]:
+                (run / 'prompt.txt').write_text(f'{header7}\n{english}\n\n{header8}\n{chinese}\n\n{header9}\n动作说明', encoding='utf-8-sig')
+                (run / 'qc.json').write_text(json.dumps({'transcript_english': 'wrong speech', 'caption_english': 'wrong caption'}))
+                (run / 'post-copy.json').write_text(json.dumps({'caption_english': 'A little detail 💚', 'hashtags': ['#OutfitInspo']}), encoding='utf-8')
+                self.assertEqual(fashion.read_generation_copy(run), {'english': english, 'chinese': chinese,
+                                                                      'caption_english': 'A little detail 💚', 'hashtags': ['#OutfitInspo']})
+            (run / 'prompt.txt').unlink()
+            (run / 'post-copy.json').unlink()
+            self.assertEqual(fashion.read_generation_copy(run), {'english': '', 'chinese': '', 'caption_english': '', 'hashtags': []})
+
+    def test_posting_rule_edits_are_read_on_each_task(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / 'posting.md'
+            with patch.object(fashion, 'POST_COPY_RULES_PATH', source):
+                source.write_text('Use one emoji.', encoding='utf-8')
+                self.assertIn('Use one emoji.', fashion.post_copy_instruction())
+                source.write_text('Use two emojis.', encoding='utf-8')
+                self.assertIn('Use two emojis.', fashion.post_copy_instruction())
 
     def test_field_requirements_are_read_from_the_selected_markdown(self):
         with tempfile.TemporaryDirectory() as temp:
