@@ -65,7 +65,7 @@ class TikTokRuntimeTests(unittest.TestCase):
             directory = Path(temp)
             (directory / 'product').mkdir()
             (directory / 'product/manifest.json').write_text(json.dumps({'pid': '1731259010175242313', 'title': 'Verified dress', 'source_url': 'https://example.com/product'}), encoding='utf-8')
-            args = SimpleNamespace(pid='1731259010175242313', prompt_text='Complete new product prompt', duration=15, model='3.0-prime')
+            args = SimpleNamespace(pid='1731259010175242313', prompt_text='Complete new product prompt', duration=15, model='3.0-prime', execution_notes='核验：商品标题匹配。\n去重范围：仅本商品历史。')
             original = run.WORKFLOW_TEMPLATE.read_bytes()
             with patch.object(run, 'RUN', directory), patch.object(run, 'login') as login:
                 run.prepare(args)
@@ -74,11 +74,20 @@ class TikTokRuntimeTests(unittest.TestCase):
                 self.assertEqual(rendered['61']['inputs']['duration'], 15)
                 self.assertEqual(rendered['79']['inputs']['image'], '')
                 self.assertEqual((directory / 'prompt.txt').read_text(encoding='utf-8'), args.prompt_text)
+                notes_path = directory / 'execution-notes.md'
+                self.assertEqual(notes_path.read_text(encoding='utf-8'), args.execution_notes)
+                self.assertNotIn(args.execution_notes, json.dumps(rendered, ensure_ascii=False))
                 review = json.loads((directory / 'prompt-review.json').read_text(encoding='utf-8'))
                 self.assertTrue(review['structure_warnings'])
                 self.assertTrue(review['semantic_review_required'])
                 self.assertEqual(review['prompt_sha256'], run.hashlib.sha256(args.prompt_text.encode()).hexdigest())
                 self.assertIn('完整要求总结', review['rules_text'])
+                args.execution_notes = None
+                run.prepare(args)
+                self.assertIn('去重范围：仅本商品历史。', notes_path.read_text(encoding='utf-8'))
+                args.execution_notes = '复核：已更新可用历史范围。'
+                run.prepare(args)
+                self.assertEqual(notes_path.read_text(encoding='utf-8'), args.execution_notes)
                 (directory / 'submission-intent.json').write_text('{}')
                 with self.assertRaisesRegex(ValueError, 'intent'):
                     run.prepare(args)
@@ -92,7 +101,7 @@ class TikTokRuntimeTests(unittest.TestCase):
                 (directory / 'product').mkdir()
                 pid = '1731259010175242313'
                 (directory / 'product/manifest.json').write_text(json.dumps({'pid': pid, 'title': 'Dress', 'source_url': 'https://example.com/product'}), encoding='utf-8')
-                args = SimpleNamespace(pid=pid, prompt_text='Prompt with selected timing', duration=selected, model='3.0-prime',
+                args = SimpleNamespace(pid=pid, prompt_text='Prompt with selected timing', duration=selected, model='3.0-prime', execution_notes='Private operational notes, not video directions',
                                        workflow=directory / 'workflow.json', prompt=directory / 'prompt.txt',
                                        face=directory / 'face.jpg', garment=directory / 'garment.jpg')
                 args.face.write_bytes(b'face')
@@ -110,6 +119,8 @@ class TikTokRuntimeTests(unittest.TestCase):
                     args.duration = override
                     run.submit(args)
                 submitted = session.post.call_args.kwargs['json']['prompt']
+                self.assertEqual(submitted['61']['inputs']['prompt'], args.prompt_text)
+                self.assertNotIn(args.execution_notes, json.dumps(submitted))
                 self.assertEqual(submitted['61']['inputs']['duration'], expected)
                 self.assertEqual(json.loads((directory / 'workflow-rendered.json').read_text(encoding='utf-8'))['61']['inputs']['duration'], expected)
                 self.assertEqual(json.loads((directory / 'prompt-submit-review.json').read_text(encoding='utf-8'))['duration'], expected)

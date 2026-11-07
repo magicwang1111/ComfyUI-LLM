@@ -57,6 +57,9 @@ def prepare(args):
     if not args.prompt_text or not args.prompt_text.strip():
         raise ValueError('Prepare requires the complete video prompt in --prompt-text.')
     duration = args.duration if args.duration is not None else 15
+    notes_path = RUN / 'execution-notes.md'
+    if getattr(args, 'execution_notes', None) is not None:
+        notes_path.write_text(args.execution_notes, encoding='utf-8')
     report = review_prompt(args.prompt_text, duration, getattr(args, 'rules_file', None))
     save('prompt-review.json', report)
     workflow = json.loads(WORKFLOW_TEMPLATE.read_text(encoding='utf-8'))
@@ -69,7 +72,7 @@ def prepare(args):
     (RUN / 'prompt.txt').write_text(args.prompt_text, encoding='utf-8')
     save('analysis.json', {'pid': args.pid, 'title': manifest['title'], 'source_url': manifest['source_url'], 'rules_file': report['rules_file']})
     status('prepared', pid=args.pid)
-    print(json.dumps({'stage': 'prepared', 'workflow': str(RUN / 'workflow.json'), 'prompt': str(RUN / 'prompt.txt'), 'review': str(RUN / 'prompt-review.json'), 'structure_warnings': report['structure_warnings'], 'semantic_review_required': True}, ensure_ascii=False))
+    print(json.dumps({'stage': 'prepared', 'workflow': str(RUN / 'workflow.json'), 'prompt': str(RUN / 'prompt.txt'), 'execution_notes': str(notes_path) if notes_path.exists() else None, 'review': str(RUN / 'prompt-review.json'), 'structure_warnings': report['structure_warnings'], 'semantic_review_required': True}, ensure_ascii=False))
 
 
 def submit(args):
@@ -173,6 +176,7 @@ if __name__ == '__main__':
     parser.add_argument('--garment',type=Path)
     parser.add_argument('--prompt',type=Path)
     parser.add_argument('--prompt-text')
+    parser.add_argument('--execution-notes', help='Product verification, crop selection, history scope and review notes; saved separately from the video prompt.')
     parser.add_argument('--rules-file', help='Markdown file inside workflow; submit inherits the prepared rules when omitted.')
     parser.add_argument('--wait-seconds',type=int,default=120)
     parser.add_argument('--pid')

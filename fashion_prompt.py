@@ -53,6 +53,12 @@ def review_prompt(prompt, duration=15, rules_file=None):
     if not expected:
         warnings.append('此规范未识别到编号输出结构，已跳过章节检查；请依据规范全文审核。')
     headings = list(HEADING.finditer(prompt))
+    marked = [(match, re.match(r'\s*(#+)', match.group(0))) for match in headings]
+    depths = [len(marker.group(1)) for _, marker in marked if marker]
+    if depths:
+        headings = [match for match, marker in marked if marker and len(marker.group(1)) == min(depths)]
+    elif any(not match.group(1).isdecimal() for match in headings):
+        headings = [match for match in headings if not match.group(1).isdecimal()]
     sections = {}
     order = []
     expected_numbers = [int(number) for number, _ in expected]
@@ -67,6 +73,24 @@ def review_prompt(prompt, duration=15, rules_file=None):
             warnings.append(f'第{number}部分「{title}」缺失或正文为空。')
     if expected_numbers and [number for number in order if number in expected_numbers] != expected_numbers:
         warnings.append('章节顺序或编号不符合完整输出结构；建议使用「## 一、标题」至最后一部分。')
+    field_rows = re.findall(r'^\|\s*(\d+)\s*\|\s*([^|]+)\|\s*$', structure.group(1), re.M) if structure else []
+    for number, fields in field_rows:
+        section = sections.get(int(number), '')
+        blocks = [section]
+        if any(int(n) == int(number) and '分镜' in title for n, title in expected):
+            shots = re.split(r'^\s*(?:#{1,6}\s*)?【分镜[^\n]+】\s*$', section, flags=re.M)
+            if len(shots) > 1:
+                blocks = shots[1:]
+        for index, block in enumerate(blocks, 1):
+            missing = [field.strip() for field in fields.split('；') if not re.search(
+                r'^\s*(?:#{1,6}\s*|[-*]\s+)?(?:\*\*)?' + re.escape(field.strip()) + r'(?:\*\*)?\s*(?:[:：]|$)', block, re.M)]
+            if missing:
+                location = f'第{number}部分' + (f'第{index}镜' if len(blocks) > 1 else '')
+                warnings.append(f'{location}缺少独立字段或分组：' + '、'.join(missing) + '。')
+    if '### 执行记录单独保存' in rules and re.search(
+        r'\bPID\b|历史去重范围|数据库(?:查询|精确匹配)|已(?:精确)?核验|裁剪(?:选择)?理由|rules_file|'
+        r'submission_rejected|scheduler worker|(?:自动|再次|再)付费|(?:实际|最终)帧率以.*检测', prompt, re.I):
+        warnings.append('脚本混入执行记录；请移至 execution-notes.md 或对应状态/质检文件，保留创作所需信息。')
     translation_rule = re.search(r'所有台词中文翻译只放在第(\d+|[一二三四五六七八九十]+)部分', rules)
     if translation_rule:
         label = translation_rule.group(1)
@@ -76,7 +100,8 @@ def review_prompt(prompt, duration=15, rules_file=None):
                 warnings.append(f'第{number}部分出现中文台词翻译字段；对白翻译应集中在第{translation_section}部分。')
     speech_section = next((int(number) for number, title in expected if '英文口播' in title), None)
     speech = sections.get(speech_section, '')
-    words = len(re.findall(r"[A-Za-z]+(?:['’][A-Za-z]+)*", speech))
+    spoken_text = re.sub(r'^[^\n:：]{1,40}[:：][ \t]*', '', speech, flags=re.M)
+    words = len(re.findall(r"[A-Za-z]+(?:['’][A-Za-z]+)*", spoken_text))
     if speech and not words:
         warnings.append(f'第{speech_section}部分未识别到英文口播。')
     if duration > 0 and words > duration * 2.4:
