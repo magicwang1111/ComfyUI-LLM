@@ -20,6 +20,25 @@ video_nodes = import_module("video_nodes")
 
 
 class AgentVideoTests(unittest.TestCase):
+    def test_selected_rules_are_passed_to_script_even_when_flags_precede_action(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            skill_path = root / 'tiktok-fashion-video'
+            (skill_path / 'scripts').mkdir(parents=True)
+            (skill_path / 'scripts/run.py').write_text('import json, sys\nprint(json.dumps(sys.argv[1:]))\n', encoding='utf-8')
+            skill = SimpleNamespace(name='tiktok-fashion-video', path=skill_path)
+            runtime = runtime_module.AgentRuntime.__new__(runtime_module.AgentRuntime)
+            runtime.allowed_paths = [root]
+            runtime.script_python = sys.executable
+            runtime.events = []
+            runtime.event_callback = None
+            tool = next(item for item in runtime._tools(skill, [], rules_file='alternate.md') if item.name == 'run_skill_script')
+            arguments = json.dumps({'script_name': 'run.py', 'arguments': ['--duration', '15', 'prepare']})
+            context = ToolContext(None, tool_name='run_skill_script', tool_call_id='rules', tool_arguments=arguments)
+            result = json.loads(asyncio.run(tool.on_invoke_tool(context, arguments)))
+            self.assertEqual(result['returncode'], 0)
+            self.assertEqual(json.loads(result['stdout']), ['--duration', '15', 'prepare', '--rules-file', 'alternate.md'])
+
     @unittest.skipIf(nodes.InputImpl is None, "Requires the ComfyUI native video API")
     def test_native_video_save_preserves_video_and_audio_streams(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -97,6 +116,7 @@ class AgentVideoTests(unittest.TestCase):
                 self.assertEqual(asyncio.run(runtime.execute("生成视频", decision, [])), "视频完成")
                 self.assertIsNone(run.call_args.args[0].model_settings.tool_choice)
                 self.assertIn("video artifacts required", run.call_args.args[0].instructions)
+                self.assertIn(runtime_module.rules_instruction(), run.call_args.args[0].instructions)
                 runtime.artifact_store.records = []
                 run.return_value = SimpleNamespace(final_output="缺少已验证的商品图和视频服务登录配置。")
                 with self.assertRaisesRegex(ValueError, "缺少已验证的商品图"):

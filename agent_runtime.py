@@ -20,6 +20,7 @@ from agents import (
 from agents.lifecycle import RunHooksBase
 
 from .artifact_store import _is_within, redact_task_credentials, safe_error_message
+from .fashion_prompt import rules_instruction, select_rules_file
 from .image_tools import (
     DEFAULT_IMAGE_MODEL,
     compose_contact_sheet,
@@ -448,7 +449,7 @@ class AgentRuntime:
         )
         return decision
 
-    def _tools(self, skill, input_paths):
+    def _tools(self, skill, input_paths, rules_file=None):
         runtime = self
         inspection_count = 0
         inspection_limit = 1 if getattr(skill, "name", "") == "fashion-model-outfit-swap" else None
@@ -667,6 +668,10 @@ class AgentRuntime:
             script = (scripts_dir / Path(script_name).name).resolve()
             if scripts_dir not in script.parents or not script.is_file() or script.suffix.lower() != ".py":
                 raise ValueError(f"Skill script is not allowed: {script_name}")
+            if rules_file and script.name == "run.py":
+                if any(item == "--rules-file" or item.startswith("--rules-file=") for item in arguments):
+                    raise ValueError("Agent Node supplies --rules-file from the current task; omit it from tool arguments.")
+                arguments = [*arguments, "--rules-file", rules_file]
             for argument in arguments:
                 candidate = Path(argument).expanduser()
                 if candidate.is_absolute() and not _is_within(candidate.resolve(), runtime.allowed_paths):
@@ -801,12 +806,14 @@ Use run_skill_script only for scripts explicitly shipped under this skill's scri
 Finish with a concise Chinese summary. Do not expose credentials or signed URL query parameters.
 </runtime_contract>
 """
+        rules_file = select_rules_file(prompt) if skill.name == "tiktok-fashion-video" else None
+        script_rules = rules_instruction(rules_file) if rules_file else ""
         agent = Agent(
             name=f"Skill: {skill.name}",
-            instructions=skill.instructions + contract,
+            instructions=skill.instructions + script_rules + contract,
             model=self.model,
             model_settings=self._settings(tool_choice=required_image_tool),
-            tools=self._tools(skill, image_paths),
+            tools=self._tools(skill, image_paths, rules_file=rules_file),
         )
         task = (
             f"用户请求：{prompt}\n"

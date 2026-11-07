@@ -2,10 +2,14 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from datetime import datetime, timezone
 import requests
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from fashion_prompt import review_prompt
 
 RUN = Path(__file__).resolve().parent
 BASE = os.environ.get('COMFY_TASK_BASE_URL') or os.environ.get('COMFY_BASE_URL', '')
@@ -52,6 +56,8 @@ def prepare(args):
         raise ValueError('Prepared product PID does not match the requested PID.')
     if not args.prompt_text or not args.prompt_text.strip():
         raise ValueError('Prepare requires the complete video prompt in --prompt-text.')
+    report = review_prompt(args.prompt_text, args.duration, getattr(args, 'rules_file', None))
+    save('prompt-review.json', report)
     workflow = json.loads(WORKFLOW_TEMPLATE.read_text(encoding='utf-8'))
     workflow['61']['inputs']['prompt'] = args.prompt_text
     workflow['61']['inputs']['duration'] = args.duration
@@ -60,9 +66,9 @@ def prepare(args):
     workflow['78']['inputs']['image'] = ''
     save('workflow.json', workflow)
     (RUN / 'prompt.txt').write_text(args.prompt_text, encoding='utf-8')
-    save('analysis.json', {'pid': args.pid, 'title': manifest['title'], 'source_url': manifest['source_url']})
+    save('analysis.json', {'pid': args.pid, 'title': manifest['title'], 'source_url': manifest['source_url'], 'rules_file': report['rules_file']})
     status('prepared', pid=args.pid)
-    print(json.dumps({'stage': 'prepared', 'workflow': str(RUN / 'workflow.json'), 'prompt': str(RUN / 'prompt.txt')}, ensure_ascii=False))
+    print(json.dumps({'stage': 'prepared', 'workflow': str(RUN / 'workflow.json'), 'prompt': str(RUN / 'prompt.txt'), 'review': str(RUN / 'prompt-review.json'), 'structure_warnings': report['structure_warnings'], 'semantic_review_required': True}, ensure_ascii=False))
 
 
 def submit(args):
@@ -73,6 +79,19 @@ def submit(args):
         if not getattr(args, name).is_file():
             raise ValueError(f'Missing {name} file: {getattr(args, name)}')
     workflow = json.loads(args.workflow.read_text(encoding='utf-8'))
+    prompt_text = args.prompt.read_text(encoding='utf-8-sig')
+    if not prompt_text.strip():
+        raise ValueError('Submit requires a nonempty video prompt.')
+    previous_review = RUN / 'prompt-review.json'
+    previous = json.loads(previous_review.read_text(encoding='utf-8')) if previous_review.exists() else {}
+    report = review_prompt(prompt_text, args.duration, getattr(args, 'rules_file', None) or previous.get('rules_file'))
+    if previous.get('rules_file') and previous['rules_file'] != report['rules_file']:
+        raise ValueError('Rules file differs from prepare; prepare the prompt with the intended rules before submitting.')
+    if previous_review.exists():
+        if previous['rules_sha256'] != report['rules_sha256']:
+            report['structure_warnings'].append('Script rules changed after prepare; review the prompt against the current specification.')
+    save('prompt-submit-review.json', report)
+    print(json.dumps({'review': str(RUN / 'prompt-submit-review.json'), 'structure_warnings': report['structure_warnings'], 'semantic_review_required': True}, ensure_ascii=False))
     s = login()
     for node, path in [('79', args.face), ('78', args.garment)]:
         with path.open('rb') as f:
@@ -80,7 +99,7 @@ def submit(args):
         r.raise_for_status()
         info = r.json()
         workflow[node]['inputs']['image'] = (info.get('subfolder','') + '/' + info['name']).lstrip('/')
-    workflow['61']['inputs'].update(prompt=args.prompt.read_text(encoding='utf-8'), duration=args.duration, model_version=args.model, resolution='720P', aspect_ratio='9:16', audio_generation='Enabled', enhance_prompt='Disabled')
+    workflow['61']['inputs'].update(prompt=prompt_text, duration=args.duration, model_version=args.model, resolution='720P', aspect_ratio='9:16', audio_generation='Enabled', enhance_prompt='Disabled')
     r = s.get(BASE + '/object_info', timeout=60)
     r.raise_for_status()
     schemas = r.json()
@@ -152,6 +171,7 @@ if __name__ == '__main__':
     parser.add_argument('--garment',type=Path)
     parser.add_argument('--prompt',type=Path)
     parser.add_argument('--prompt-text')
+    parser.add_argument('--rules-file', help='Markdown file inside workflow; submit inherits the prepared rules when omitted.')
     parser.add_argument('--wait-seconds',type=int,default=120)
     parser.add_argument('--pid')
     parser.add_argument('--duration',type=int,default=15)

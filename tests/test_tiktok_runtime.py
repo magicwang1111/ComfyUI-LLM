@@ -74,11 +74,35 @@ class TikTokRuntimeTests(unittest.TestCase):
                 self.assertEqual(rendered['61']['inputs']['duration'], 15)
                 self.assertEqual(rendered['79']['inputs']['image'], '')
                 self.assertEqual((directory / 'prompt.txt').read_text(encoding='utf-8'), args.prompt_text)
+                review = json.loads((directory / 'prompt-review.json').read_text(encoding='utf-8'))
+                self.assertTrue(review['structure_warnings'])
+                self.assertTrue(review['semantic_review_required'])
+                self.assertEqual(review['prompt_sha256'], run.hashlib.sha256(args.prompt_text.encode()).hexdigest())
+                self.assertIn('完整要求总结', review['rules_text'])
                 (directory / 'submission-intent.json').write_text('{}')
                 with self.assertRaisesRegex(ValueError, 'intent'):
                     run.prepare(args)
                 login.assert_not_called()
             self.assertEqual(run.WORKFLOW_TEMPLATE.read_bytes(), original)
+
+    def test_submit_reviews_actual_prompt_before_network_and_preserves_prepare_review(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            args = SimpleNamespace(pid='1731259010175242313', duration=15)
+            for name in ('workflow', 'face', 'garment', 'prompt'):
+                path = directory / name
+                path.write_text('{}' if name == 'workflow' else 'Actual submitted prompt', encoding='utf-8')
+                setattr(args, name, path)
+            prepared = {'rules_sha256': 'older-specification'}
+            (directory / 'prompt-review.json').write_text(json.dumps(prepared), encoding='utf-8')
+            with patch.object(run, 'RUN', directory), patch.object(run, 'login', side_effect=RuntimeError('network intentionally stopped')):
+                with self.assertRaisesRegex(RuntimeError, 'intentionally stopped'):
+                    run.submit(args)
+            report = json.loads((directory / 'prompt-submit-review.json').read_text(encoding='utf-8'))
+            self.assertEqual(report['prompt_sha256'], run.hashlib.sha256(b'Actual submitted prompt').hexdigest())
+            self.assertTrue(any('changed after prepare' in warning for warning in report['structure_warnings']))
+            self.assertEqual(json.loads((directory / 'prompt-review.json').read_text(encoding='utf-8')), prepared)
+            self.assertFalse((directory / 'submission-intent.json').exists())
 
     def test_poll_waits_for_existing_job_without_resubmission(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -88,6 +112,31 @@ class TikTokRuntimeTests(unittest.TestCase):
                 run.poll(SimpleNamespace(wait_seconds=120))
                 self.assertEqual(poll.call_count, 2)
                 sleep.assert_called_once()
+
+    def test_submit_inherits_prepared_markdown_and_rejects_switching_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            (directory / 'alternate.md').write_text('# Other rules\nOnly write Chinese.', encoding='utf-8')
+            (directory / 'different.md').write_text('# Different rules', encoding='utf-8')
+            args = SimpleNamespace(pid='1731259010175242313', duration=15, rules_file=None)
+            for name in ('workflow', 'face', 'garment', 'prompt'):
+                path = directory / name
+                path.write_text('{}' if name == 'workflow' else 'Saved prompt', encoding='utf-8')
+                setattr(args, name, path)
+            (directory / 'prompt-review.json').write_text(json.dumps({'rules_file': 'alternate.md', 'rules_sha256': 'old'}), encoding='utf-8')
+            rules_module = importlib.import_module('fashion_prompt')
+            with patch.object(run, 'RUN', directory), patch.object(rules_module, 'RULES_DIR', directory):
+                with patch.object(run, 'login', side_effect=RuntimeError('stop before network')):
+                    with self.assertRaisesRegex(RuntimeError, 'stop before network'):
+                        run.submit(args)
+                review = json.loads((directory / 'prompt-submit-review.json').read_text(encoding='utf-8'))
+                self.assertEqual(review['rules_file'], 'alternate.md')
+                self.assertIn('Only write Chinese.', review['rules_text'])
+                args.rules_file = 'different.md'
+                with patch.object(run, 'login') as login:
+                    with self.assertRaisesRegex(ValueError, 'differs from prepare'):
+                        run.submit(args)
+                    login.assert_not_called()
 
     def test_task_session_uses_bearer_without_password_login(self):
         env = {"COMFY_TASK_TOKEN": "alice-token", "COMFY_TASK_BASE_URL": "http://127.0.0.1:8183"}
