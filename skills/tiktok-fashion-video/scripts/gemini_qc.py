@@ -6,12 +6,13 @@ import io
 import time
 import sys
 from pathlib import Path
-import requests
+import httpx
 from PIL import Image, ImageOps
 from video_media import compress_for_qc
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from ops_client import flush, queue_qc, settings
+from api_client import VapeurClient
 
 MAX_INLINE_BYTES = 12 * 1024 * 1024
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -52,11 +53,12 @@ def request_qc(args, key, instruction):
                 'compressed': video != args.video}
         response = None
         try:
-            response = requests.post(f'{args.base_url}/models/{args.model}:generateContent',
-                                     headers={'x-goog-api-key': key, 'Content-Type': 'application/json'},
-                                     data=payload, timeout=(30, 180))
+            with VapeurClient(timeout=httpx.Timeout(180, connect=30)) as client:
+                response = client.post(f'{args.base_url}/models/{args.model}:generateContent',
+                                       headers={'x-goog-api-key': key, 'Content-Type': 'application/json'},
+                                       content=payload)
             info['status'] = response.status_code
-        except (requests.Timeout, requests.ConnectionError) as exc:
+        except httpx.RequestError as exc:
             info['error'] = type(exc).__name__
         attempts.append(info)
         args.output.with_suffix('.attempts.json').write_text(json.dumps(attempts, indent=2), encoding='utf-8')

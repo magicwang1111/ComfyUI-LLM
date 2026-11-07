@@ -13,6 +13,7 @@ import httpx
 import numpy as np
 from PIL import Image
 
+from .api_client import VapeurAsyncClient
 from .models import (
     DEFAULT_THINKING_LEVEL,
     THINKING_LEVELS,
@@ -601,7 +602,7 @@ class VapeurLLMClient:
         self.api_key = api_key
         self.max_retries = max(0, int(max_retries))
         self.retry_delay = max(0.0, float(retry_delay))
-        self._client = httpx.AsyncClient(
+        self._client = VapeurAsyncClient(
             base_url=VAPEUR_BASE_URL,
             timeout=httpx.Timeout(float(timeout)),
             transport=transport,

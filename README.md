@@ -2,6 +2,10 @@
 
 ComfyUI custom nodes for text generation through [VapeurAI](https://vapeur.ai/).
 
+Requests use `api.vapeur.ai` first and fall back once to `apiv2.vapeur.ai` on
+connection errors or connection timeouts, preserving the API path and payload.
+HTTP errors and failures after connecting do not trigger endpoint switching.
+
 ## Nodes
 
 - `ComfyUI-LLM GPT`

@@ -9,6 +9,8 @@ import httpx
 import numpy as np
 from PIL import Image, ImageOps
 
+from .api_client import VapeurAsyncClient
+
 
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 DEFAULT_IMAGE_MODEL = "gpt-image-2"
@@ -164,7 +166,7 @@ class VapeurImageClient:
         self.api_key = api_key
         self.max_retries = max(0, int(max_retries))
         self.retry_delay = max(0.0, float(retry_delay))
-        self.client = httpx.AsyncClient(
+        self.client = VapeurAsyncClient(
             base_url="https://api.vapeur.ai",
             timeout=httpx.Timeout(float(timeout)),
             transport=transport,

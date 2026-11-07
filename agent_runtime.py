@@ -4,7 +4,7 @@ import re
 import sys
 from pathlib import Path
 
-from openai import AsyncOpenAI
+from openai import DEFAULT_CONNECTION_LIMITS, AsyncOpenAI
 from PIL import Image, ImageOps
 from pydantic import BaseModel, Field
 
@@ -21,6 +21,7 @@ from agents import (
 )
 from agents.lifecycle import RunHooksBase
 
+from .api_client import VapeurAsyncClient
 from .artifact_store import _is_within, redact_task_credentials, safe_error_message
 from .fashion_prompt import rules_instruction, select_rules_file
 from .image_tools import (
@@ -126,6 +127,7 @@ class AgentRuntime:
             api_key=api_key,
             base_url="https://api.vapeur.ai/v1",
             timeout=float(timeout),
+            http_client=VapeurAsyncClient(limits=DEFAULT_CONNECTION_LIMITS, follow_redirects=True),
         )
         self.model = OpenAIResponsesModel(model=agent_model, openai_client=self.client)
         self.hooks = ReasoningSummaryHooks(self)
