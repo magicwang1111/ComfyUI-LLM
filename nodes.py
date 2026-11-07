@@ -567,6 +567,9 @@ class AgentTaskNode(AgentSDKNode):
             schema = super().define_schema()
             schema.node_id = f"{NODE_PREFIX} Agent Task"
             schema.display_name = f"{NODE_PREFIX} 独立 Agent 任务"
+            for item in schema.inputs:
+                if item.id == "reference_images":
+                    item.template.min = 0
             schema.outputs = [io.String.Output(display_name="task_id")]
             return schema
 
