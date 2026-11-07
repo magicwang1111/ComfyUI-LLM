@@ -180,6 +180,13 @@ an intermittent provider error, despite the successful fresh test.
 
 ### Agent node
 
+For queued Agent execution outside the ComfyUI worker pool, use the new
+`ComfyUI-LLM Agent Task` node and `start_agent_service.ps1` / `start_agent_service.sh`.
+The independent service defaults to port **8195** and rejects ports 8180–8190.
+It requires the matching Account Manager update. See
+[独立 Agent 服务运行说明](workflow/独立Agent服务运行说明.md) for startup, task status,
+recovery, and the task-ID output contract.
+
 `ComfyUI-LLM Agent Node` discovers the workflows under `skills/`, selects one
 from the prompt and input images, and executes it with the OpenAI Agents SDK
 through Vapeur's `/v1/responses` route. Its controlled tools can:

@@ -25,6 +25,8 @@ def _module(name):
 
 
 async def _run(job):
+    if job.get("recovery_only"):
+        return await _module("orchestration.recovery").recover(job)
     agent_runtime = _module("agent_runtime")
     artifact_store = _module("artifact_store")
     image_tools = _module("image_tools")

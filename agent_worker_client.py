@@ -1,6 +1,8 @@
 import asyncio
 import json
 import os
+import signal
+import subprocess
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -79,6 +81,8 @@ class AgentWorkerClient:
                 env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+                   if os.name == "nt" else {"start_new_session": True}),
             )
             stdout_lines = []
             stderr_lines = []
@@ -112,7 +116,7 @@ class AgentWorkerClient:
                 await asyncio.wait_for(process.wait(), timeout=self.timeout * 2)
                 await asyncio.gather(stdout_task, stderr_task)
             except asyncio.TimeoutError:
-                process.kill()
+                await _stop_process_tree(process)
                 await process.wait()
                 await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
                 raise ValueError("Agent SDK worker exceeded the task timeout.")
@@ -133,5 +137,25 @@ class AgentWorkerClient:
                 raise ValueError(result["error"])
             return result
         finally:
+            if process is not None and process.returncode is None:
+                await _stop_process_tree(process)
+                await process.wait()
             request_path.unlink(missing_ok=True)
             result_path.unlink(missing_ok=True)
+
+
+async def _stop_process_tree(process):
+    if process.returncode is not None:
+        return
+    if os.name == "nt":
+        stop = await asyncio.create_subprocess_exec(
+            "taskkill.exe", "/PID", str(process.pid), "/T", "/F",
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        await stop.wait()
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass

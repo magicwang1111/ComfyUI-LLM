@@ -405,6 +405,7 @@ class AgentSDKNode(_AgentNodeBase):
         mask=None,
         input_path="",
         unique_id=None,
+        independent=False,
     ):
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt is required.")
@@ -463,26 +464,35 @@ class AgentSDKNode(_AgentNodeBase):
                 ops_identity = current_identity()
             except ValueError:
                 ops_identity = {}
+        job = {
+            "prompt": prompt,
+            "agent_model": agent_model,
+            "skill_override": effective_override,
+            "image_model": image_model,
+            "thinking_level": thinking_level,
+            "max_agent_turns": max_agent_turns,
+            "input_paths": [str(path) for path in input_paths],
+            "size_reference_path": str(size_reference_path or ""),
+            "input_path": str(resolved_input or ""),
+            "mask_path": str(mask_path) if mask_path else "",
+            "allowed_paths": [str(path) for path in allowed_paths],
+            "output_root": str(root),
+            "job_id": artifacts.job_id,
+            "job_dir": str(artifacts.job_dir),
+            "flat_outputs": True,
+            "script_python": sys.executable,
+        }
+        if independent:
+            from server import PromptServer
+
+            submit = getattr(PromptServer.instance, "account_manager_submit_agent", None)
+            if submit is None:
+                raise ValueError("请更新 Account Manager 并启用分布式队列后使用独立 Agent。")
+            job["publish_to_oss"] = bool(publish_to_oss)
+            return submit(unique_id, job)
         worker = AgentWorkerClient(config, timeout=runtime_config["timeout"])
         result = await worker.run(
-            {
-                "prompt": prompt,
-                "agent_model": agent_model,
-                "skill_override": effective_override,
-                "image_model": image_model,
-                "thinking_level": thinking_level,
-                "max_agent_turns": max_agent_turns,
-                "input_paths": [str(path) for path in input_paths],
-                "size_reference_path": str(size_reference_path or ""),
-                "input_path": str(resolved_input or ""),
-                "mask_path": str(mask_path) if mask_path else "",
-                "allowed_paths": [str(path) for path in allowed_paths],
-                "output_root": str(root),
-                "job_id": artifacts.job_id,
-                "job_dir": str(artifacts.job_dir),
-                "flat_outputs": True,
-                "script_python": sys.executable,
-            },
+            job,
             artifacts.job_dir,
             on_event=lambda event: _send_agent_progress(unique_id, event),
             task_environment=current_task_environment(),
@@ -548,6 +558,40 @@ class AgentSDKNode(_AgentNodeBase):
         )
 
 
+class AgentTaskNode(AgentSDKNode):
+    """Save inputs and enqueue an Agent without waiting for its final result."""
+
+    if io is not None:
+        @classmethod
+        def define_schema(cls):
+            schema = super().define_schema()
+            schema.node_id = f"{NODE_PREFIX} Agent Task"
+            schema.display_name = f"{NODE_PREFIX} 独立 Agent 任务"
+            schema.outputs = [io.String.Output(display_name="task_id")]
+            return schema
+
+        @classmethod
+        async def execute(cls, **kwargs):
+            task_id = await cls().run_agent(**kwargs, unique_id=cls.hidden.unique_id, independent=True)
+            return io.NodeOutput(task_id, ui={"agent_task_id": [task_id]})
+
+        @classmethod
+        def fingerprint_inputs(cls, **kwargs):
+            return float("nan")
+    else:
+        RETURN_TYPES = ("STRING",)
+        RETURN_NAMES = ("task_id",)
+        OUTPUT_IS_LIST = (False,)
+
+        @classmethod
+        def IS_CHANGED(cls, **kwargs):
+            return float("nan")
+
+        async def execute_legacy(self, **kwargs):
+            task_id = await self.run_agent(**kwargs, independent=True)
+            return {"ui": {"agent_task_id": [task_id]}, "result": (task_id,)}
+
+
 NODE_CLASS_MAPPINGS = {
     f"{NODE_PREFIX} GPT": GPTLLMNode,
     f"{NODE_PREFIX} Claude": ClaudeLLMNode,
@@ -555,8 +599,10 @@ NODE_CLASS_MAPPINGS = {
     f"{NODE_PREFIX} DeepSeek": DeepSeekLLMNode,
     f"{NODE_PREFIX} Qwen": QwenLLMNode,
     f"{NODE_PREFIX} Agent SDK": AgentSDKNode,
+    f"{NODE_PREFIX} Agent Task": AgentTaskNode,
     f"{NODE_PREFIX} Video Output": LLMVideoOutput,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {name: name for name in NODE_CLASS_MAPPINGS}
 NODE_DISPLAY_NAME_MAPPINGS[f"{NODE_PREFIX} Agent SDK"] = f"{NODE_PREFIX} Agent Node"
+NODE_DISPLAY_NAME_MAPPINGS[f"{NODE_PREFIX} Agent Task"] = f"{NODE_PREFIX} 独立 Agent 任务"
