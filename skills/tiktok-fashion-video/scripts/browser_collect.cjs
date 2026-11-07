@@ -21,7 +21,7 @@ async function main() {
     const url = `https://seller.us.tiktokshopglobalselling.com/product/edit/${config.pid}?shop_region=US`;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     try {
-      await page.locator('[id^="main_image_item_"] img').first().waitFor({ timeout: 45000 });
+      await page.locator('[id^="main_image_item_"] img:not([src*="image-upload-placeholder-"])').first().waitFor({ timeout: 45000 });
     } catch {
       throw new Error('未读取到商品图片：请检查商品 PID、店铺访问权限，以及浏览器登录是否需要验证码。');
     }
@@ -30,7 +30,8 @@ async function main() {
       title: document.querySelector('h1')?.innerText.split('\n')[0].trim(),
       images: Array.from(document.images)
         .map(image => ({ url: image.src, id: image.closest('[id]')?.id }))
-        .filter(image => /^main_image_item_\d+$/.test(image.id || '')),
+        .filter(image => /^main_image_item_\d+$/.test(image.id || ''))
+        .filter(image => !/\/image-upload-placeholder-[^/]+$/i.test(new URL(image.url, location.href).pathname)),
     }));
     const actualPid = new URL(product.url).pathname.match(/^\/product\/edit\/(\d+)$/)?.[1];
     if (actualPid !== config.pid || !product.title || !product.images.length) {
