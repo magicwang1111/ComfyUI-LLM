@@ -34,7 +34,7 @@ def summarize_video(path, expected_duration=15):
     data = probe_video(path)
     summary = {'duration': float(data['format']['duration']), 'bytes': path.stat().st_size,
                'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'streams': data['streams'], 'warnings': []}
-    if abs(summary['duration'] - expected_duration) >= 0.2:
+    if expected_duration > 0 and abs(summary['duration'] - expected_duration) >= 0.2:
         summary['warnings'].append(f'Expected {expected_duration}s; measured {summary["duration"]}s.')
     if not any(s['codec_type'] == 'audio' for s in summary['streams']):
         summary['warnings'].append('Video has no audio stream; speech QC is unavailable.')

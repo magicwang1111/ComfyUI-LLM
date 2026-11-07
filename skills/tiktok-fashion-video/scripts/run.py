@@ -56,11 +56,12 @@ def prepare(args):
         raise ValueError('Prepared product PID does not match the requested PID.')
     if not args.prompt_text or not args.prompt_text.strip():
         raise ValueError('Prepare requires the complete video prompt in --prompt-text.')
-    report = review_prompt(args.prompt_text, args.duration, getattr(args, 'rules_file', None))
+    duration = args.duration if args.duration is not None else 15
+    report = review_prompt(args.prompt_text, duration, getattr(args, 'rules_file', None))
     save('prompt-review.json', report)
     workflow = json.loads(WORKFLOW_TEMPLATE.read_text(encoding='utf-8'))
     workflow['61']['inputs']['prompt'] = args.prompt_text
-    workflow['61']['inputs']['duration'] = args.duration
+    workflow['61']['inputs']['duration'] = duration
     workflow['61']['inputs']['model_version'] = args.model
     workflow['79']['inputs']['image'] = ''
     workflow['78']['inputs']['image'] = ''
@@ -84,7 +85,8 @@ def submit(args):
         raise ValueError('Submit requires a nonempty video prompt.')
     previous_review = RUN / 'prompt-review.json'
     previous = json.loads(previous_review.read_text(encoding='utf-8')) if previous_review.exists() else {}
-    report = review_prompt(prompt_text, args.duration, getattr(args, 'rules_file', None) or previous.get('rules_file'))
+    duration = args.duration if args.duration is not None else workflow['61']['inputs']['duration']
+    report = review_prompt(prompt_text, duration, getattr(args, 'rules_file', None) or previous.get('rules_file'))
     if previous.get('rules_file') and previous['rules_file'] != report['rules_file']:
         raise ValueError('Rules file differs from prepare; prepare the prompt with the intended rules before submitting.')
     if previous_review.exists():
@@ -99,7 +101,7 @@ def submit(args):
         r.raise_for_status()
         info = r.json()
         workflow[node]['inputs']['image'] = (info.get('subfolder','') + '/' + info['name']).lstrip('/')
-    workflow['61']['inputs'].update(prompt=prompt_text, duration=args.duration, model_version=args.model, resolution='720P', aspect_ratio='9:16', audio_generation='Enabled', enhance_prompt='Disabled')
+    workflow['61']['inputs'].update(prompt=prompt_text, duration=duration, model_version=args.model, resolution='720P', aspect_ratio='9:16', audio_generation='Enabled', enhance_prompt='Disabled')
     r = s.get(BASE + '/object_info', timeout=60)
     r.raise_for_status()
     schemas = r.json()
@@ -174,7 +176,7 @@ if __name__ == '__main__':
     parser.add_argument('--rules-file', help='Markdown file inside workflow; submit inherits the prepared rules when omitted.')
     parser.add_argument('--wait-seconds',type=int,default=120)
     parser.add_argument('--pid')
-    parser.add_argument('--duration',type=int,default=15)
+    parser.add_argument('--duration',type=int, help='Output seconds (2-30, or -1 for smart duration); prepare defaults to 15, submit inherits the workflow when omitted.')
     parser.add_argument('--model',default='3.0-prime')
     args = parser.parse_args()
     RUN=args.run_dir.resolve()

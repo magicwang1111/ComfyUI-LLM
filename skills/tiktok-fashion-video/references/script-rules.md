@@ -18,10 +18,12 @@ Agent Node 每次执行都通过 `fashion_prompt.py` 读取所选文件全文并
 ```text
 python fashion_prompt.py list
 python fashion_prompt.py show --rules-file "开箱视频规则.md"
-python fashion_prompt.py check --rules-file "开箱视频规则.md" --prompt RUN/prompt.txt --duration 15
+python fashion_prompt.py check --rules-file "开箱视频规则.md" --prompt RUN/prompt.txt --duration DURATION_SECONDS
 ```
 
 独立 CLI 的 `run.py prepare` 同样支持 `--rules-file`；`run.py submit` 未传此参数时继承准备阶段的文件，显式换文件需重新 prepare。Agent 外部使用本技能时，也须先读取所选规范全文。
+
+`DURATION_SECONDS` 应替换为本次选定的秒数：先遵循用户明确要求，否则遵循当前 Markdown 的时长要求。范围允许在范围内选择，有优先值时优先采用；其他规则文件不继承女装的15秒偏好。Agent 在 prepare 时显式传入选定时长，submit 省略 `--duration` 即继承工作流中的时长。独立 CLI 的 prepare 未传时长时才使用15秒兜底，不会自行从 Markdown 解析时长。当前生成节点支持2–30整数秒，也支持 `-1` 智能时长；智能时长不按固定秒数检查口播预算或成片时长偏差。提示词的基础设定、分镜时间轴及口播应与实际生成时长一致。
 
 `prompt-review.json` 与 `prompt-submit-review.json` 保存所选文件名、规范全文及 SHA-256、提示词 SHA-256 和辅助检查结果。新增或修改 Markdown 无需重启，下一次执行读取最新内容。
 

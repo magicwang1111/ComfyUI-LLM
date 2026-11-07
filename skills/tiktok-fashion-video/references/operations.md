@@ -16,10 +16,12 @@ Crop bounds apply to the EXIF-oriented original. Inspect the output. These sampl
 
 ```text
 python scripts/crop_garment.py --source ORIGINAL_01 --output CROP.jpg --bounds 0 0.21 1 1 --metadata RUN/crop.json
-python scripts/run.py submit --run-dir RUN --base-url BASE --workflow API_WORKFLOW.json --face FACE.jpg --garment CROP.jpg --prompt PROMPT.txt --pid EXACT_19_DIGITS --duration 15 --model 3.0-prime
+python scripts/run.py submit --run-dir RUN --base-url BASE --workflow API_WORKFLOW.json --face FACE.jpg --garment CROP.jpg --prompt PROMPT.txt --pid EXACT_19_DIGITS --duration DURATION_SECONDS --model 3.0-prime
 python scripts/run.py poll --run-dir RUN --base-url BASE
 python scripts/download_video.py --run-dir RUN --base-url BASE
 ```
+
+DURATION_SECONDS is the duration chosen from the current request or selected Markdown, not a fixed 15. When submitting RUN/workflow.json from prepare, omit --duration to inherit its duration. An explicit --duration overrides the workflow, so keep the prompt timing consistent.
 
 Review existing intents for the product/run before submission. The helper guards one directory, not a global deduplication database. Intent without `job.json` means outcome may be unknown. Reconcile the saved client ID/fingerprint against queue/history/scheduler. Do not repeat `/prompt` to find out. Inspect definite validation rejection before any newly authorized attempt.
 

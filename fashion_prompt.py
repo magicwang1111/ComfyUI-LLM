@@ -79,7 +79,7 @@ def review_prompt(prompt, duration=15, rules_file=None):
     words = len(re.findall(r"[A-Za-z]+(?:['’][A-Za-z]+)*", speech))
     if speech and not words:
         warnings.append(f'第{speech_section}部分未识别到英文口播。')
-    if words > duration * 2.4:
+    if duration > 0 and words > duration * 2.4:
         warnings.append(f'英文口播约{words}词，超过{duration}秒按每秒2.4词估算的建议预算；需检查自然语速与回应停顿。')
     return {
         'rules_file': source.relative_to(RULES_DIR.resolve()).as_posix(),

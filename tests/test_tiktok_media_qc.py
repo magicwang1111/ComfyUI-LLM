@@ -63,6 +63,19 @@ class MediaTests(unittest.TestCase):
             self.assertTrue(summary['warnings'])  # A duration mismatch must not discard a valid video.
             self.assertEqual(json.loads((directory / 'status.json').read_text())['stage'], 'video_downloaded')
 
+    def test_download_uses_rendered_duration_and_skips_smart_duration_comparison(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            final = directory / 'final.mp4'
+            sample_video(final)
+            for duration, mismatch in ((1, False), (20, True), (-1, False)):
+                with self.subTest(duration=duration):
+                    (directory / 'workflow-rendered.json').write_text(json.dumps({'61': {'inputs': {'duration': duration}}}), encoding='utf-8')
+                    with patch.object(run, 'RUN', directory), patch.object(run, 'login') as login:
+                        summary = download.download(directory)
+                    login.assert_not_called()
+                    self.assertEqual(any('Expected ' in warning for warning in summary['warnings']), mismatch)
+
     def test_corrupt_download_never_becomes_final(self):
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from PIL import Image
 
 
@@ -84,6 +84,35 @@ class TikTokRuntimeTests(unittest.TestCase):
                     run.prepare(args)
                 login.assert_not_called()
             self.assertEqual(run.WORKFLOW_TEMPLATE.read_bytes(), original)
+
+    def test_duration_survives_prepare_and_submit(self):
+        for selected, override, expected in ((None, None, 15), (12, None, 12), (20, None, 20), (-1, None, -1), (15, 20, 20)):
+            with self.subTest(selected=selected, override=override), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp)
+                (directory / 'product').mkdir()
+                pid = '1731259010175242313'
+                (directory / 'product/manifest.json').write_text(json.dumps({'pid': pid, 'title': 'Dress', 'source_url': 'https://example.com/product'}), encoding='utf-8')
+                args = SimpleNamespace(pid=pid, prompt_text='Prompt with selected timing', duration=selected, model='3.0-prime',
+                                       workflow=directory / 'workflow.json', prompt=directory / 'prompt.txt',
+                                       face=directory / 'face.jpg', garment=directory / 'garment.jpg')
+                args.face.write_bytes(b'face')
+                args.garment.write_bytes(b'garment')
+                session = Mock()
+                session.post.return_value.json.side_effect = [{'name': 'face.jpg'}, {'name': 'garment.jpg'}, {'prompt_id': 'test-job'}]
+                session.post.return_value.status_code = 200
+                with patch.object(run, 'RUN', directory), patch.object(run, 'login', return_value=session):
+                    run.prepare(args)
+                    prepared = json.loads(args.workflow.read_text(encoding='utf-8'))
+                    prepared_duration = 15 if selected is None else selected
+                    self.assertEqual(prepared['61']['inputs']['duration'], prepared_duration)
+                    self.assertEqual(json.loads((directory / 'prompt-review.json').read_text(encoding='utf-8'))['duration'], prepared_duration)
+                    session.get.return_value.json.return_value = {node['class_type']: {'input': {'required': {}}} for node in prepared.values()}
+                    args.duration = override
+                    run.submit(args)
+                submitted = session.post.call_args.kwargs['json']['prompt']
+                self.assertEqual(submitted['61']['inputs']['duration'], expected)
+                self.assertEqual(json.loads((directory / 'workflow-rendered.json').read_text(encoding='utf-8'))['61']['inputs']['duration'], expected)
+                self.assertEqual(json.loads((directory / 'prompt-submit-review.json').read_text(encoding='utf-8'))['duration'], expected)
 
     def test_submit_reviews_actual_prompt_before_network_and_preserves_prepare_review(self):
         with tempfile.TemporaryDirectory() as temp:

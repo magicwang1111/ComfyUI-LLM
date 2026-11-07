@@ -100,6 +100,9 @@ class FashionPromptTests(unittest.TestCase):
         self.assertTrue(any('预算' in item for item in short['structure_warnings']))
         self.assertEqual(long['structure_warnings'], [])
         self.assertEqual(short['prompt_sha256'], long['prompt_sha256'])
+        smart = fashion.review_prompt(prompt, -1)
+        self.assertEqual(smart['structure_warnings'], [])
+        self.assertEqual(smart['duration'], -1)
 
 
 if __name__ == '__main__':
