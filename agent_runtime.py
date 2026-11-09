@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import re
 import sys
@@ -23,7 +24,7 @@ from agents.lifecycle import RunHooksBase
 
 from .api_client import VapeurAsyncClient
 from .artifact_store import _is_within, redact_task_credentials, safe_error_message
-from .fashion_prompt import post_copy_instruction, rules_instruction, select_rules_file
+from .fashion_prompt import load_script_references, post_copy_instruction, rules_instruction, select_rules_file
 from .image_tools import (
     DEFAULT_IMAGE_MODEL,
     compose_contact_sheet,
@@ -844,11 +845,30 @@ Finish with a concise Chinese summary. Do not expose credentials or signed URL q
 """
         rules_file = select_rules_file(prompt) if skill.name == "tiktok-fashion-video" else None
         script_rules = rules_instruction(rules_file) + post_copy_instruction() if rules_file else ""
+        references, reference_files = load_script_references(skill.path) if rules_file else ("", [])
+        instructions = skill.instructions + script_rules + references + contract
+        settings = self._settings(tool_choice=required_image_tool)
+        if reference_files:
+            cache_key = "tiktok-fashion-video-" + hashlib.sha256(instructions.encode("utf-8")).hexdigest()[:32]
+            settings.prompt_cache_retention = "24h"
+            settings.extra_args = {"prompt_cache_key": cache_key}
+            reference_record = {
+                "files": reference_files,
+                "prompt_cache_key": cache_key,
+                "prompt_cache_retention": "24h",
+            }
+            (self.artifact_store.job_dir / "script-references.json").write_text(
+                json.dumps(reference_record, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            self._record(
+                "script_references", f"已加载 {len(reference_files)} 篇视频脚本参考。",
+                **reference_record,
+            )
         agent = Agent(
             name=f"Skill: {skill.name}",
-            instructions=skill.instructions + script_rules + contract,
+            instructions=instructions,
             model=self.model,
-            model_settings=self._settings(tool_choice=required_image_tool),
+            model_settings=settings,
             tools=self._tools(skill, image_paths, rules_file=rules_file),
         )
         task = (

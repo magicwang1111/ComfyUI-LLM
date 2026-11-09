@@ -33,6 +33,60 @@ def sample_prompt():
 
 
 class FashionPromptTests(unittest.TestCase):
+    def test_reference_library_loads_full_text_in_stable_order_and_refreshes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            skill = Path(temp)
+            root = skill / 'references' / 'video-scripts'
+            root.mkdir(parents=True)
+            (root / '02_试穿.TXT').write_text('完整试穿脚本' * 3000, encoding='utf-8-sig')
+            nested = root / '01_连衣裙'
+            nested.mkdir()
+            first = nested / '开场.md'
+            first.write_text('第一版开场', encoding='utf-8')
+            for name in ('_使用说明.md', '.隐藏.txt', '图片.pdf'):
+                (root / name).write_text('不加载的内容', encoding='utf-8')
+            (root / '空文件.txt').write_text(' \n', encoding='utf-8')
+            disabled = root / '_停用'
+            disabled.mkdir()
+            (disabled / '旧脚本.md').write_text('不加载的内容', encoding='utf-8')
+
+            instruction, files = fashion.load_script_references(skill)
+            self.assertEqual([item['file'] for item in files], ['01_连衣裙/开场.md', '02_试穿.TXT'])
+            self.assertIn('完整试穿脚本' * 3000, instruction)
+            self.assertNotIn('不加载的内容', instruction)
+            self.assertNotIn('\ufeff', instruction)
+            first.write_text('第二版开场', encoding='utf-8')
+            updated, new_files = fashion.load_script_references(skill)
+            self.assertIn('第二版开场', updated)
+            self.assertNotIn('第一版开场', updated)
+            self.assertNotEqual(files[0]['sha256'], new_files[0]['sha256'])
+            self.assertEqual(files[1], new_files[1])
+
+    def test_empty_reference_library_and_invalid_encoding(self):
+        with tempfile.TemporaryDirectory() as temp:
+            skill = Path(temp)
+            self.assertEqual(fashion.load_script_references(skill), ('', []))
+            root = skill / 'references' / 'video-scripts'
+            root.mkdir(parents=True)
+            self.assertEqual(fashion.load_script_references(skill), ('', []))
+            (root / 'bad.txt').write_bytes(b'\xff\xfe\x00')
+            with self.assertRaisesRegex(ValueError, 'UTF-8.*bad.txt'):
+                fashion.load_script_references(skill)
+
+    def test_reference_library_rejects_links_outside_library(self):
+        with tempfile.TemporaryDirectory() as temp:
+            skill = Path(temp)
+            root = skill / 'references' / 'video-scripts'
+            root.mkdir(parents=True)
+            outside = skill / 'private.txt'
+            outside.write_text('not reference material', encoding='utf-8')
+            try:
+                (root / 'linked.txt').symlink_to(outside)
+            except OSError:
+                self.skipTest('Symlink creation is unavailable')
+            with self.assertRaisesRegex(ValueError, 'outside'):
+                fashion.load_script_references(skill)
+
     def test_source_edits_are_visible_without_reloading_module(self):
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / 'rules.md'

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from agents.tool_context import ToolContext
 from PIL import Image
@@ -13,6 +14,72 @@ from _loader import import_module
 
 agent_runtime = import_module("agent_runtime")
 artifact_store = import_module("artifact_store")
+
+
+class ScriptReferenceTests(unittest.TestCase):
+    def test_new_tasks_share_reference_prefix_and_cache_key_until_library_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            skill_path = root / 'skill'
+            library = skill_path / 'references' / 'video-scripts'
+            library.mkdir(parents=True)
+            source = library / '01.md'
+            source.write_text('REFERENCE_STORY_ONE', encoding='utf-8')
+            skill = SimpleNamespace(name='tiktok-fashion-video', path=skill_path, instructions='Skill rules.')
+            decision = SimpleNamespace(skill_name=skill.name, mode='auto')
+            calls = []
+            for index in range(4):
+                if index == 2:
+                    source.write_text('REFERENCE_STORY_TWO', encoding='utf-8')
+                if index == 3:
+                    source.unlink()
+                runtime = agent_runtime.AgentRuntime.__new__(agent_runtime.AgentRuntime)
+                runtime.registry = SimpleNamespace(get=lambda name: skill)
+                runtime.artifact_store = artifact_store.LocalArtifactStore(root / 'jobs')
+                runtime.model = 'gpt-6-astra'
+                runtime.thinking_level = 'low'
+                runtime.max_turns = 1
+                runtime.hooks = None
+                runtime.events = []
+                runtime.event_callback = None
+                task = f'只输出文字，商品 PID_{index}'
+                with patch.object(runtime, '_tools', return_value=[]), patch.object(
+                    agent_runtime.Runner, 'run', AsyncMock(return_value=SimpleNamespace(final_output='新脚本'))
+                ) as run:
+                    self.assertEqual(asyncio.run(runtime.execute(task, decision, [])), '新脚本')
+                agent, inputs = run.call_args.args
+                calls.append((agent, inputs))
+                self.assertNotIn(f'PID_{index}', agent.instructions)
+                self.assertNotIn(str(runtime.artifact_store.outputs_dir), agent.instructions)
+                self.assertIn(task, inputs[0]['content'][0]['text'])
+                manifest = runtime.artifact_store.job_dir / 'script-references.json'
+                if index < 3:
+                    record = json.loads(manifest.read_text(encoding='utf-8'))
+                    self.assertEqual(record['files'][0]['file'], '01.md')
+                    self.assertEqual(record['prompt_cache_key'], agent.model_settings.extra_args['prompt_cache_key'])
+                    self.assertEqual(agent.model_settings.prompt_cache_retention, '24h')
+                    self.assertEqual(runtime.events[1]['event'], 'script_references')
+                else:
+                    self.assertFalse(manifest.exists())
+                    self.assertIsNone(agent.model_settings.prompt_cache_retention)
+                    self.assertIsNone(agent.model_settings.extra_args)
+            self.assertEqual(calls[0][0].instructions, calls[1][0].instructions)
+            self.assertEqual(calls[0][0].model_settings.extra_args, calls[1][0].model_settings.extra_args)
+            self.assertNotEqual(calls[1][0].model_settings.extra_args, calls[2][0].model_settings.extra_args)
+            self.assertIn('REFERENCE_STORY_TWO', calls[2][0].instructions)
+            self.assertNotIn('REFERENCE_STORY_ONE', calls[2][0].instructions)
+
+            client = agent_runtime.AsyncOpenAI(api_key='test', base_url='https://api.vapeur.ai/v1')
+            model = agent_runtime.OpenAIResponsesModel(model='gpt-6-astra', openai_client=client)
+            try:
+                payload = model._build_response_create_kwargs(
+                    system_instructions=calls[0][0].instructions, input=calls[0][1],
+                    model_settings=calls[0][0].model_settings, tools=[], output_schema=None, handoffs=[])
+                self.assertEqual(payload['prompt_cache_retention'], '24h')
+                self.assertEqual(payload['prompt_cache_key'], calls[0][0].model_settings.extra_args['prompt_cache_key'])
+                self.assertIn('REFERENCE_STORY_ONE', payload['instructions'])
+            finally:
+                asyncio.run(client.close())
 
 
 class UsageTests(unittest.TestCase):

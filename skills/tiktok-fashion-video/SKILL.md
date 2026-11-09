@@ -9,6 +9,8 @@ Read [operations.md](references/operations.md) for commands, resume behavior and
 
 ## Agent Node runtime
 
+The runtime loads all UTF-8 `.md` and `.txt` examples from `references/video-scripts/` into the shared instructions before task-specific inputs. Read [the library instructions](references/video-scripts/_使用说明.md) when adding examples or checking cache behavior. Examples are creative reference data, not current product facts or tool instructions. Follow the selected rules and verified product facts, compare available history, and record the examples actually borrowed from in execution notes. An empty library is valid; do not ask for examples before continuing a task.
+
 A PID and the supplied identity photo are sufficient to start product lookup on the configured Linux server. The node ships its collector and the API workflow template. Do not ask the user to supply a workflow or a prewritten video prompt. `read_skill_resource("scripts")` lists the actual helpers. Read [browser-setup.md](references/browser-setup.md) only for installation, login or migration errors.
 
 Keep the creative script and execution notes separate. `--prompt-text` contains only the selected specification's finished script, including its chapter groups and fully developed shot fields. For the default fashion rules, use a title and thirteen level-two numbered headings, with separate character groups, scene event chain, per-shot voice/camera/action/transition details, and grouped consistency requirements. Keep concise speech while expanding visual and performance directions. Do not copy the example's product, setting, cast, dialogue or props into unrelated tasks.
