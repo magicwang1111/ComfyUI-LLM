@@ -36,6 +36,11 @@ UPLOAD_PATH = "/api/v1/uploads"
 # the free temporary storage (oss://, 48 h, bound to the model and account).
 MAX_BASE64_VIDEO_CHARS = 9_500_000
 MAX_VIDEO_BYTES = 1024 * 1024 * 1024
+ASR_MODEL = "qwen-audio-3.1-asr-flash-filetrans"
+ASR_SUBMIT_PATH = "/api/v1/services/audio/asr/transcription"
+ASR_POLL_INTERVAL = 2.0
+ASR_LANGUAGES = ["auto", "zh", "en", "ja", "ko"]
+NO_SPEECH_TEXT = "（未识别到语音）"
 
 # audio: understands the video's sound track. thinking: how thinking_level maps.
 #   effort      -> reasoning_effort (none/low/medium/xhigh)
@@ -208,6 +213,7 @@ class BailianClient:
         self.api_key = api_key
         self.max_retries = max(0, int(max_retries))
         self.retry_delay = max(0.0, float(retry_delay))
+        self.timeout = float(timeout)
         self._client = httpx.AsyncClient(
             base_url=base_url, timeout=httpx.Timeout(float(timeout)), transport=transport,
         )
@@ -222,7 +228,7 @@ class BailianClient:
         if response.status_code >= 400:
             raise BailianAPIError(response.status_code, f"getPolicy failed: {_error_message(response)}")
         policy = response.json()["data"]
-        key = f"{policy['upload_dir']}/{uuid.uuid4().hex}.mp4"
+        key = f"{policy['upload_dir']}/{uuid.uuid4().hex}{Path(path).suffix or '.mp4'}"
         with open(path, "rb") as handle:
             upload = await self._client.post(
                 policy["upload_host"],
@@ -271,6 +277,51 @@ class BailianClient:
                 await asyncio.sleep(self.retry_delay)
         raise RuntimeError("unreachable")
 
+    async def transcribe(self, file_url, parameters):
+        """Submit an async filetrans ASR task, poll it, and return (task, transcription)."""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json; charset=utf-8",
+            "X-DashScope-Async": "enable",
+        }
+        if file_url.startswith("oss://"):
+            headers["X-DashScope-OssResourceResolve"] = "enable"
+        response = await self._client.post(ASR_SUBMIT_PATH, headers=headers, json={
+            "model": ASR_MODEL,
+            "input": {"file_urls": [file_url]},
+            "parameters": parameters,
+        })
+        if response.status_code >= 400:
+            raise BailianAPIError(response.status_code, f"ASR submit failed: {_error_message(response)}")
+        task_id = response.json()["output"]["task_id"]
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.timeout
+        while True:
+            await asyncio.sleep(ASR_POLL_INTERVAL)
+            response = await self._client.get(
+                f"/api/v1/tasks/{task_id}", headers={"Authorization": f"Bearer {self.api_key}"},
+            )
+            if response.status_code >= 400 and response.status_code not in RETRYABLE_HTTP_STATUS_CODES:
+                raise BailianAPIError(response.status_code, f"ASR task query failed: {_error_message(response)}")
+            if response.status_code < 400:
+                task = response.json()
+                status = task.get("output", {}).get("task_status")
+                if status not in {"PENDING", "RUNNING"}:
+                    break
+            if loop.time() > deadline:
+                raise ValueError(f"百炼 ASR task {task_id} did not finish within {self.timeout:.0f} s.")
+        output = task.get("output", {})
+        results = output.get("results") or []
+        result = results[0] if results else {}
+        if status != "SUCCEEDED" or result.get("subtask_status", "SUCCEEDED") != "SUCCEEDED":
+            detail = result.get("message") or output.get("message") or status
+            code = result.get("code") or output.get("code") or ""
+            raise ValueError(f"百炼 ASR task {task_id} failed: [{code}] {detail}")
+        transcription = await self._client.get(result["transcription_url"])
+        if transcription.status_code >= 400:
+            raise BailianAPIError(transcription.status_code, "ASR result download failed.")
+        return task, transcription.json()
+
     async def close(self):
         await self._client.aclose()
 
@@ -298,6 +349,50 @@ def extract_bailian_text(response):
     if not isinstance(text, str) or not text.strip():
         raise ValueError(f"百炼 response did not contain final text (finish_reason={choice.get('finish_reason')}).")
     return text
+
+
+def _clock(ms):
+    seconds = max(0, int(ms or 0)) / 1000
+    return f"{int(seconds // 60):02d}:{seconds % 60:05.2f}"
+
+
+def format_transcript(transcription, timestamps=True):
+    lines = []
+    for track in transcription.get("transcripts") or []:
+        sentences = track.get("sentences") or []
+        if timestamps and sentences:
+            for sentence in sentences:
+                text = (sentence.get("text") or "").strip()
+                if not text:
+                    continue
+                speaker = sentence.get("speaker_id")
+                prefix = f"[{_clock(sentence.get('begin_time'))}-{_clock(sentence.get('end_time'))}]"
+                if speaker is not None:
+                    prefix += f" 说话人{speaker}"
+                lines.append(f"{prefix} {text}")
+        elif (track.get("text") or "").strip():
+            lines.append(track["text"].strip())
+    return "\n".join(lines) if lines else NO_SPEECH_TEXT
+
+
+async def transcribe_video(video, language="auto", timestamps=True, diarization=False):
+    if video is None:
+        raise ValueError("VIDEO input is required.")
+    parameters = {}
+    if language != "auto":
+        parameters["language_hints"] = [language]
+    if diarization:
+        parameters["diarization_enabled"] = True
+    client = create_bailian_client()
+    try:
+        with tempfile.TemporaryDirectory(prefix="comfyui-llm-bailian-asr-") as directory:
+            path = await asyncio.to_thread(save_video_mp4, video, directory)
+            file_url = await client.upload_temp_file(ASR_MODEL, path)
+        task, transcription = await client.transcribe(file_url, parameters)
+    finally:
+        await client.close()
+    raw = {"task": task, "transcription": transcription}
+    return format_transcript(transcription, timestamps), raw
 
 
 async def generate_bailian(model, thinking_level, system_prompt, user_prompt, image=None, video=None):

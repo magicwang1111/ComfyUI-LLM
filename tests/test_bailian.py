@@ -143,6 +143,70 @@ class BailianTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn("InvalidParameter", str(ctx.exception))
 
+    def _asr_handler(self, calls, final_status="SUCCEEDED", transcription=None):
+        polls = iter(["RUNNING", final_status])
+
+        def handler(request):
+            calls.append(request)
+            path = request.url.path
+            if path == "/api/v1/uploads":
+                self.assertEqual(request.url.params["model"], bailian.ASR_MODEL)
+                return httpx.Response(200, json={"data": {
+                    "upload_dir": "dashscope-instant/a", "upload_host": "https://oss.example.com",
+                    "oss_access_key_id": "id", "signature": "sig", "policy": "pol",
+                    "x_oss_object_acl": "private", "x_oss_forbid_overwrite": "true",
+                }})
+            if request.url.host == "oss.example.com":
+                return httpx.Response(200)
+            if path == bailian.ASR_SUBMIT_PATH:
+                self.assertEqual(request.headers["X-DashScope-Async"], "enable")
+                self.assertEqual(request.headers["X-DashScope-OssResourceResolve"], "enable")
+                body = json.loads(request.content)
+                self.assertEqual(body["model"], "qwen-audio-3.1-asr-flash-filetrans")
+                self.assertTrue(body["input"]["file_urls"][0].startswith("oss://dashscope-instant/a/"))
+                self.assertEqual(body["parameters"], {"language_hints": ["zh"]})
+                return httpx.Response(200, json={"output": {"task_id": "t1", "task_status": "PENDING"}})
+            if path == "/api/v1/tasks/t1":
+                status = next(polls)
+                result = {"subtask_status": status, "transcription_url": "https://result.example.com/r.json"}
+                if status == "FAILED":
+                    result.update(code="InvalidFile.NoAudio", message="no audio")
+                return httpx.Response(200, json={"output": {"task_status": status, "results": [result]}})
+            if request.url.host == "result.example.com":
+                return httpx.Response(200, json=transcription)
+            raise AssertionError(f"unexpected {request.url}")
+
+        return handler
+
+    def test_asr_node_transcribes_with_timestamps(self):
+        calls = []
+        transcription = {"transcripts": [{"text": "姐妹们，绝了。129元两条。", "sentences": [
+            {"begin_time": 240, "end_time": 3970, "text": "姐妹们，绝了。"},
+            {"begin_time": 64500, "end_time": 67920, "text": "129元两条。"},
+        ]}]}
+        client = make_client(self._asr_handler(calls, transcription=transcription))
+        with patch.object(bailian, "create_bailian_client", return_value=client), \
+                patch.object(bailian, "ASR_POLL_INTERVAL", 0):
+            text, raw = asyncio.run(nodes.BailianASRNode().transcribe(FakeVideo(), "zh", True, False))
+        self.assertEqual(text, "[00:00.24-00:03.97] 姐妹们，绝了。\n[01:04.50-01:07.92] 129元两条。")
+        self.assertEqual(json.loads(raw)["transcription"], transcription)
+        self.assertEqual(len(calls), 6)
+
+        client = make_client(self._asr_handler([], transcription=transcription))
+        with patch.object(bailian, "create_bailian_client", return_value=client), \
+                patch.object(bailian, "ASR_POLL_INTERVAL", 0):
+            text, _ = asyncio.run(nodes.BailianASRNode().transcribe(FakeVideo(), "zh", False, False))
+        self.assertEqual(text, "姐妹们，绝了。129元两条。")
+
+    def test_asr_no_speech_and_failure(self):
+        self.assertEqual(bailian.format_transcript({"transcripts": []}), bailian.NO_SPEECH_TEXT)
+        client = make_client(self._asr_handler([], final_status="FAILED"))
+        with patch.object(bailian, "create_bailian_client", return_value=client), \
+                patch.object(bailian, "ASR_POLL_INTERVAL", 0):
+            with self.assertRaises(ValueError) as ctx:
+                asyncio.run(nodes.BailianASRNode().transcribe(FakeVideo(), "zh"))
+        self.assertIn("InvalidFile.NoAudio", str(ctx.exception))
+
     def test_config_strips_api_suffix(self):
         with patch.object(bailian, "load_config", return_value={
             "BAILIAN_API_KEY": "sk", "BAILIAN_BASE_URL": "ws-1.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/",

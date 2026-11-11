@@ -14,6 +14,7 @@ HTTP errors and failures after connecting do not trigger endpoint switching.
 - `ComfyUI-LLM DeepSeek`
 - `ComfyUI-LLM Qwen`
 - `ComfyUI-LLM Qwen 百炼` (direct Alibaba Cloud Model Studio, video input)
+- `ComfyUI-LLM 百炼 ASR 转写` (speech-to-text for a VIDEO)
 - `ComfyUI-LLM Agent Node`
 
 GPT, Claude, Gemini, and Qwen accept one optional ComfyUI `IMAGE` for image
@@ -149,6 +150,26 @@ reported "no voice" in 2 of 2 tries, so this node never sends `none` to it.
 A 25 MB, 13-second clip went through the temporary-upload path with
 `qwen3.8-flash`. Omni models require the model to be enabled (and billable)
 in the workspace; otherwise the API returns `403 AccessDenied.Unpurchased`.
+
+### 百炼 ASR 转写
+
+`ComfyUI-LLM 百炼 ASR 转写` transcribes a `VIDEO`'s speech with
+`qwen-audio-3.1-asr-flash-filetrans`, using the same `BAILIAN_*` config. It
+uploads the MP4 (audio kept) to Model Studio temporary storage, submits an
+async task to `/api/v1/services/audio/asr/transcription`, polls
+`/api/v1/tasks/{task_id}` every 2 s until done or `request_timeout`, and
+downloads the result JSON.
+
+Inputs: `video`, `language` (`auto`/`zh`/`en`/`ja`/`ko`), `timestamps`
+(prefix each sentence with `[mm:ss.ss-mm:ss.ss]`), `diarization` (speaker
+labels, mono audio only). `text` is `（未识别到语音）` when nothing is
+recognized; `response_json` holds the task and full transcription.
+
+ASR only hears audio and cannot tell a voice-over from background-music
+lyrics: in a 2026-11-11 test it transcribed (and misheard) the song in a
+music-only clip, while a synthetic voice-over was transcribed exactly in about
+3 s. To replace an Omni model, feed the transcript plus product facts into
+`Qwen 百炼` with `qwen3.8-flash` and the video still connected for visuals.
 
 ### Gemini video to product voice-over
 
@@ -387,6 +408,7 @@ the source of truth if OSS upload fails.
 | Claude | `/claude/v1/messages` | `x-api-key` |
 | Gemini | `/gemini/v1beta/models/{model}:generateContent` | `x-goog-api-key` |
 | Qwen 百炼 | `{BAILIAN_BASE_URL}/compatible-mode/v1/chat/completions` (stream); uploads: `/api/v1/uploads` | Bearer |
+| 百炼 ASR | `{BAILIAN_BASE_URL}/api/v1/services/audio/asr/transcription` (async) + `/api/v1/tasks/{id}` | Bearer |
 | Agent Node | `/v1/responses` | Bearer |
 | Agent images (`gpt-image-2`) | `/v1/images/generations`, `/v1/images/edits` | Bearer |
 | Agent images (`bananapro`) | `/gemini/v1beta/models/gemini-3-pro-image:generateContent` | `x-goog-api-key` |

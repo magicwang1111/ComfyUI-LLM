@@ -51,11 +51,13 @@ from .models import (
 )
 from .skills_runtime import SkillRegistry
 from .bailian import (
+    ASR_LANGUAGES,
     BAILIAN_MODELS,
     DEFAULT_BAILIAN_MODEL,
     BailianAPIError,
     extract_bailian_text,
     generate_bailian,
+    transcribe_video,
 )
 from .video_nodes import LLMVideoOutput
 
@@ -247,6 +249,35 @@ class BailianQwenNode:
                 raise ValueError(f"{exc} 请检查 BAILIAN_API_KEY、业务空间与模型开通情况。") from exc
             raise ValueError(str(exc)) from exc
         return extract_bailian_text(response), response_json(response)
+
+
+class BailianASRNode:
+    """Transcribe a VIDEO's speech with qwen-audio-3.1-asr-flash-filetrans (百炼)."""
+
+    CATEGORY = NODE_CATEGORY
+    FUNCTION = "transcribe"
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("text", "response_json")
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "video": ("VIDEO",),
+                "language": (ASR_LANGUAGES, {"default": "auto", "tooltip": "auto 为自动识别语种；方言会转写为普通话。"}),
+                "timestamps": ("BOOLEAN", {"default": True, "tooltip": "每句前加 [分:秒-分:秒] 时间戳。"}),
+                "diarization": ("BOOLEAN", {"default": False, "tooltip": "区分说话人（仅单声道音频）。"}),
+            },
+        }
+
+    async def transcribe(self, video, language="auto", timestamps=True, diarization=False):
+        try:
+            text, raw = await transcribe_video(video, language, timestamps, diarization)
+        except BailianAPIError as exc:
+            if exc.status_code in {401, 403}:
+                raise ValueError(f"{exc} 请检查 BAILIAN_API_KEY、业务空间与模型开通情况。") from exc
+            raise ValueError(str(exc)) from exc
+        return text, response_json(raw)
 
 
 # Keep the Agent's tool-enabled model list independent of the text node catalog.
@@ -641,6 +672,7 @@ NODE_CLASS_MAPPINGS = {
     f"{NODE_PREFIX} DeepSeek": DeepSeekLLMNode,
     f"{NODE_PREFIX} Qwen": QwenLLMNode,
     f"{NODE_PREFIX} Qwen Bailian": BailianQwenNode,
+    f"{NODE_PREFIX} Bailian ASR": BailianASRNode,
     f"{NODE_PREFIX} Agent SDK": AgentSDKNode,
     f"{NODE_PREFIX} Agent Task": AgentTaskNode,
     f"{NODE_PREFIX} Video Output": LLMVideoOutput,
@@ -648,5 +680,6 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {name: name for name in NODE_CLASS_MAPPINGS}
 NODE_DISPLAY_NAME_MAPPINGS[f"{NODE_PREFIX} Qwen Bailian"] = f"{NODE_PREFIX} Qwen 百炼"
+NODE_DISPLAY_NAME_MAPPINGS[f"{NODE_PREFIX} Bailian ASR"] = f"{NODE_PREFIX} 百炼 ASR 转写"
 NODE_DISPLAY_NAME_MAPPINGS[f"{NODE_PREFIX} Agent SDK"] = f"{NODE_PREFIX} Agent Node"
 NODE_DISPLAY_NAME_MAPPINGS[f"{NODE_PREFIX} Agent Task"] = f"{NODE_PREFIX} 独立 Agent 任务"

@@ -209,6 +209,7 @@ class NodeTests(unittest.TestCase):
                 "ComfyUI-LLM DeepSeek",
                 "ComfyUI-LLM Qwen",
                 "ComfyUI-LLM Qwen Bailian",
+                "ComfyUI-LLM Bailian ASR",
                 "ComfyUI-LLM Agent SDK",
                 "ComfyUI-LLM Agent Task",
                 "ComfyUI-LLM Video Output",
