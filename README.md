@@ -13,6 +13,7 @@ HTTP errors and failures after connecting do not trigger endpoint switching.
 - `ComfyUI-LLM Gemini`
 - `ComfyUI-LLM DeepSeek`
 - `ComfyUI-LLM Qwen`
+- `ComfyUI-LLM Qwen 百炼` (direct Alibaba Cloud Model Studio, video input)
 - `ComfyUI-LLM Agent Node`
 
 GPT, Claude, Gemini, and Qwen accept one optional ComfyUI `IMAGE` for image
@@ -102,6 +103,52 @@ solid red image with `qwen3.8-flash` and `qwen3.7-flash`; `qwen3.7-max` and
 `qwen3.7-max-glb` returned upstream HTTP 400 image-parameter errors. Use the
 tested Flash models for images. Other chat-route vision models have not been
 live-tested; text smoke tests do not establish long-context or answer quality.
+
+### Qwen 百炼 (direct Model Studio, video input)
+
+`ComfyUI-LLM Qwen 百炼` calls Alibaba Cloud Model Studio's OpenAI-compatible
+`/compatible-mode/v1/chat/completions` directly, not through Vapeur. Set in
+`config.local.json`:
+
+```json
+{
+  "BAILIAN_API_KEY": "sk-...",
+  "BAILIAN_BASE_URL": "https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com"
+}
+```
+
+`BAILIAN_BASE_URL` defaults to `https://dashscope.aliyuncs.com`; a trailing
+`/compatible-mode/v1` or `/api/v1` is accepted and stripped. The key can also
+come from the `BAILIAN_API_KEY` or `DASHSCOPE_API_KEY` environment variable.
+`request_timeout`, `request_retries` and `retry_delay` are shared with the
+Vapeur nodes.
+
+Inputs: `model`, `thinking_level`, `system_prompt`, `user_prompt`, optional
+`image` and optional `video`. With video connected and the default system
+prompt unchanged, it uses the same video voice-over instructions as Gemini.
+Requests are always streamed (Qwen3.5-Omni rejects non-streaming calls) and
+merged into one `chat.completion`-shaped `response_json`.
+
+The video is serialized to MP4 with audio. Clips whose Base64 is under ~9.5 MB
+are sent inline; larger ones (up to 1 GB) are uploaded to Model Studio's free
+temporary storage (`oss://`, 48 h, bound to the selected model) and sent with
+`X-DashScope-OssResourceResolve: enable`.
+
+| Model | Hears video audio | `thinking_level` |
+| --- | --- | --- |
+| `qwen3.8-omni-flash` (default) | Yes | `reasoning_effort`; `off` → `low`, `high` → `xhigh` |
+| `qwen3.5-omni-plus`, `qwen3.5-omni-flash` | Yes | ignored (no thinking) |
+| `qwen3.8-max`, `qwen3.8-flash` | No, visuals only | `reasoning_effort`; `off` → `none` |
+| `qwen3.7-max/plus/flash`, `qwen3.6-plus/flash` | No, visuals only | `enable_thinking`; low/medium budgets 4,096 / 16,384 |
+
+Use an Omni model when the reference video's spoken voice-over matters. In
+live tests on 2026-11-11 with a synthetic Chinese TTS clip, all three Omni
+models transcribed the speech; `qwen3.8-max`, `qwen3.8-flash` and `qwen3.7-*`
+reported "no voice". `qwen3.8-omni-flash` with `reasoning_effort: none` also
+reported "no voice" in 2 of 2 tries, so this node never sends `none` to it.
+A 25 MB, 13-second clip went through the temporary-upload path with
+`qwen3.8-flash`. Omni models require the model to be enabled (and billable)
+in the workspace; otherwise the API returns `403 AccessDenied.Unpurchased`.
 
 ### Gemini video to product voice-over
 
@@ -339,6 +386,7 @@ the source of truth if OSS upload fails.
 | DeepSeek | `/v1/chat/completions` | Bearer |
 | Claude | `/claude/v1/messages` | `x-api-key` |
 | Gemini | `/gemini/v1beta/models/{model}:generateContent` | `x-goog-api-key` |
+| Qwen 百炼 | `{BAILIAN_BASE_URL}/compatible-mode/v1/chat/completions` (stream); uploads: `/api/v1/uploads` | Bearer |
 | Agent Node | `/v1/responses` | Bearer |
 | Agent images (`gpt-image-2`) | `/v1/images/generations`, `/v1/images/edits` | Bearer |
 | Agent images (`bananapro`) | `/gemini/v1beta/models/gemini-3-pro-image:generateContent` | `x-goog-api-key` |

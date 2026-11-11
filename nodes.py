@@ -45,10 +45,18 @@ from .models import (
     NODE_CATEGORY,
     NODE_PREFIX,
     THINKING_LEVELS,
+    VIDEO_SYSTEM_PROMPT,
     default_model,
     model_names,
 )
 from .skills_runtime import SkillRegistry
+from .bailian import (
+    BAILIAN_MODELS,
+    DEFAULT_BAILIAN_MODEL,
+    BailianAPIError,
+    extract_bailian_text,
+    generate_bailian,
+)
 from .video_nodes import LLMVideoOutput
 
 
@@ -177,14 +185,7 @@ class GeminiLLMNode(_BaseLLMNode):
         if video is None:
             return await super().generate(model, thinking_level, system_prompt, user_prompt, image)
         if system_prompt == DEFAULT_SYSTEM_PROMPT:
-            system_prompt = (
-                "你是中文短视频口播文案编辑。先理解参考视频的原口播、音频、字幕、画面和表达结构，"
-                "再结合用户提供的产品资料创作新的口播文案。借鉴开场、节奏、卖点组织和结尾，"
-                "产品事实以用户提供的资料为准，不将参考视频的品牌、价格、功效或优惠套用到新产品。"
-                "不虚构产品信息，不把听不清的内容当作事实；没有人声时参考画面和字幕。"
-                "遵循用户指定的时长和风格，未指定时篇幅接近参考视频口播。"
-                "只输出可以直接朗读的完整口播正文，不解释、不加标题、不输出分析或Markdown。"
-            )
+            system_prompt = VIDEO_SYSTEM_PROMPT
         path, payload = build_request(
             self.PROVIDER, model, thinking_level, system_prompt, user_prompt, image,
         )
@@ -208,6 +209,44 @@ class QwenLLMNode(_BaseLLMNode):
         inputs = super().INPUT_TYPES()
         del inputs["required"]["thinking_level"]
         return inputs
+
+
+class BailianQwenNode:
+    """Qwen through Alibaba Cloud Model Studio (百炼) directly, with optional video input."""
+
+    CATEGORY = NODE_CATEGORY
+    FUNCTION = "generate"
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("text", "response_json")
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": (list(BAILIAN_MODELS), {
+                    "default": DEFAULT_BAILIAN_MODEL,
+                    "tooltip": "Omni 模型可理解视频音轨（口播）；qwen3.8-max/flash、3.7、3.6 只看画面。",
+                }),
+                "thinking_level": (THINKING_LEVELS, {"default": "low"}),
+                "system_prompt": ("STRING", {"multiline": True, "default": DEFAULT_SYSTEM_PROMPT}),
+                "user_prompt": ("STRING", {"multiline": True, "default": ""}),
+            },
+            "optional": {"image": ("IMAGE",), "video": ("VIDEO",)},
+        }
+
+    async def generate(self, model, thinking_level="low", system_prompt=DEFAULT_SYSTEM_PROMPT,
+                       user_prompt="", image=None, video=None):
+        if video is not None and system_prompt == DEFAULT_SYSTEM_PROMPT:
+            system_prompt = VIDEO_SYSTEM_PROMPT
+        try:
+            response = await generate_bailian(
+                model, thinking_level, system_prompt, user_prompt, image, video,
+            )
+        except BailianAPIError as exc:
+            if exc.status_code in {401, 403}:
+                raise ValueError(f"{exc} 请检查 BAILIAN_API_KEY、业务空间与模型开通情况。") from exc
+            raise ValueError(str(exc)) from exc
+        return extract_bailian_text(response), response_json(response)
 
 
 # Keep the Agent's tool-enabled model list independent of the text node catalog.
@@ -601,11 +640,13 @@ NODE_CLASS_MAPPINGS = {
     f"{NODE_PREFIX} Gemini": GeminiLLMNode,
     f"{NODE_PREFIX} DeepSeek": DeepSeekLLMNode,
     f"{NODE_PREFIX} Qwen": QwenLLMNode,
+    f"{NODE_PREFIX} Qwen Bailian": BailianQwenNode,
     f"{NODE_PREFIX} Agent SDK": AgentSDKNode,
     f"{NODE_PREFIX} Agent Task": AgentTaskNode,
     f"{NODE_PREFIX} Video Output": LLMVideoOutput,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {name: name for name in NODE_CLASS_MAPPINGS}
+NODE_DISPLAY_NAME_MAPPINGS[f"{NODE_PREFIX} Qwen Bailian"] = f"{NODE_PREFIX} Qwen 百炼"
 NODE_DISPLAY_NAME_MAPPINGS[f"{NODE_PREFIX} Agent SDK"] = f"{NODE_PREFIX} Agent Node"
 NODE_DISPLAY_NAME_MAPPINGS[f"{NODE_PREFIX} Agent Task"] = f"{NODE_PREFIX} 独立 Agent 任务"
