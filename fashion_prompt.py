@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 RULES_DIR = Path(__file__).resolve().parent / 'workflow'
-RULES_PATH = RULES_DIR / '欧美大码女装_TikTok视频脚本_完整规范.md'
+RULES_PATH = RULES_DIR / '美国TikTok_PlusSize_UGC视频脚本规范.md'
 POST_COPY_RULES_PATH = RULES_DIR / 'TikTok发布文案与标签规则.md'
 CHINESE_NUMBERS = dict(zip(('一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三'), range(1, 14)))
 for number in range(14, 100):
@@ -181,7 +181,7 @@ def review_prompt(prompt, duration=15, rules_file=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['list', 'show', 'check'])
-    parser.add_argument('--rules-file', help='Markdown filename or relative path inside workflow; defaults to the existing fashion rules.')
+    parser.add_argument('--rules-file', help='Markdown filename or relative path inside workflow; defaults to the US TikTok Plus Size UGC rules.')
     parser.add_argument('--prompt', type=Path)
     parser.add_argument('--duration', type=int, default=15)
     args = parser.parse_args()

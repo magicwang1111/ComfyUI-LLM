@@ -86,7 +86,7 @@ class TikTokRuntimeTests(unittest.TestCase):
                 self.assertTrue(review['structure_warnings'])
                 self.assertTrue(review['semantic_review_required'])
                 self.assertEqual(review['prompt_sha256'], run.hashlib.sha256(args.prompt_text.encode()).hexdigest())
-                self.assertIn('完整要求总结', review['rules_text'])
+                self.assertIn('创意词条自行抽取规则', review['rules_text'])
                 args.execution_notes = None
                 run.prepare(args)
                 self.assertIn('去重范围：仅本商品历史。', notes_path.read_text(encoding='utf-8'))
