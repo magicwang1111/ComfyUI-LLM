@@ -1,9 +1,10 @@
 import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 
-const NODE = "ComfyUI-LLM Agent Task";
+const NODES = new Set(["ComfyUI-LLM Agent Task", "ComfyUI-LLM Agent SDK"]);
 const BASE = "/llm/agent-tasks";
 const LABELS = {
+    staged: "正在保存工作流",
     queued: "排队中", running: "Agent 执行中", delivering: "结果交付中",
     completed: "已完成", failed: "失败", cancel_requested: "正在取消",
     cancelled: "已取消", recovery_required: "执行中断，待恢复",
@@ -131,7 +132,7 @@ function installPanel(node) {
 app.registerExtension({
     name: "ComfyUI-LLM.AgentTask",
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name !== NODE) return;
+        if (!NODES.has(nodeData.name)) return;
         const created = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             const result = created?.apply(this, arguments);

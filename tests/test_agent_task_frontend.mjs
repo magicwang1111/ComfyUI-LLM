@@ -52,4 +52,16 @@ await new Promise(setImmediate);
 assert(restored.panel.children.find((el) => el.tag === 'pre').textContent.includes('log-task-a'));
 for (const node of [first, second, restored]) node.onRemoved();
 assert.equal(calls.length, 3);
+class SDKNode {
+    constructor() { this.size = [300, 200]; this.properties = {}; }
+    addDOMWidget(name, type, element) { this.panel = element; return {}; }
+}
+await extension.beforeRegisterNodeDef(SDKNode, { name: 'ComfyUI-LLM Agent SDK' });
+const sdk = new SDKNode();
+sdk.onNodeCreated();
+sdk.onExecuted({ agent_task_id: ['sdk-task'] });
+await new Promise(setImmediate);
+assert.equal(sdk.properties.agent_task_id, 'sdk-task');
+assert(sdk.panel.children.find((el) => el.tag === 'pre').textContent.includes('log-sdk-task'));
+sdk.onRemoved();
 console.log('Agent frontend: task isolation, saved binding and result rendering passed');

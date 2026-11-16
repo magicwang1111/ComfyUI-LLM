@@ -5,6 +5,7 @@ from pathlib import Path
 
 try:
     from comfy_api.latest import InputImpl, io
+    from comfy_execution.graph_utils import ExecutionBlocker
 except ImportError:  # Allows the lightweight unit-test runtime outside ComfyUI.
     io = None
     InputImpl = None
@@ -344,6 +345,32 @@ def _send_agent_progress(unique_id, event):
 _AgentNodeBase = io.ComfyNode if io is not None else object
 
 
+class _PendingAgent:
+    def __init__(self, task_id):
+        self.task_id = task_id
+
+
+def _agent_workflow():
+    try:
+        from server import PromptServer
+    except ImportError:
+        return None
+    return getattr(PromptServer.instance, 'account_manager_agent_workflow', None)
+
+
+def _workflow_result(task):
+    if task['state'] in {'failed', 'cancelled', 'recovery_required'}:
+        raise ValueError(task.get('error') or f"Agent 任务状态：{task['state']}；未重新提交生成。")
+    if task['state'] != 'completed':
+        return _PendingAgent(task['id'])
+    result = task['result']
+    records = [ArtifactRecord(**item) for item in result.get('artifacts', [])]
+    videos = [InputImpl.VideoFromFile(record.path) for record in records
+              if record.kind == 'output' and record.status == 'success'
+              and record.content_type.startswith('video/')]
+    return records_to_preview(records), result['text'], result['cost'], [], videos
+
+
 class AgentSDKNode(_AgentNodeBase):
     if io is not None:
         @classmethod
@@ -403,10 +430,14 @@ class AgentSDKNode(_AgentNodeBase):
         @classmethod
         async def execute(cls, **kwargs):
             node = cls()
-            images, text, estimated_cost, agent_progress, videos = await node.run_agent(
+            result = await node.run_agent(
                 **kwargs,
                 unique_id=cls.hidden.unique_id,
             )
+            if isinstance(result, _PendingAgent):
+                blocked = ExecutionBlocker(None)
+                return io.NodeOutput(blocked, blocked, [blocked], ui={"agent_task_id": [result.task_id]})
+            images, text, estimated_cost, agent_progress, videos = result
             return io.NodeOutput(
                 images,
                 text,
@@ -416,6 +447,10 @@ class AgentSDKNode(_AgentNodeBase):
                     "agent_progress": agent_progress,
                 },
             )
+
+        @classmethod
+        def fingerprint_inputs(cls, **kwargs):
+            return float('nan') if _agent_workflow() is not None else None
     else:
         OUTPUT_NODE = True
         CATEGORY = NODE_CATEGORY
@@ -451,7 +486,11 @@ class AgentSDKNode(_AgentNodeBase):
             }
 
     async def execute_legacy(self, **kwargs):
-        images, text, estimated_cost, agent_progress, videos = await self.run_agent(**kwargs)
+        result = await self.run_agent(**kwargs)
+        if isinstance(result, _PendingAgent):
+            blocked = ExecutionBlocker(None)
+            return {"ui": {"agent_task_id": [result.task_id]}, "result": (blocked, blocked, [blocked])}
+        images, text, estimated_cost, agent_progress, videos = result
         return {
             "ui": {
                 "llm_cost": [estimated_cost],
@@ -459,6 +498,10 @@ class AgentSDKNode(_AgentNodeBase):
             },
             "result": (images, text, videos),
         }
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float('nan') if _agent_workflow() is not None else None
 
     async def run_agent(
         self,
@@ -479,6 +522,11 @@ class AgentSDKNode(_AgentNodeBase):
     ):
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt is required.")
+        workflow = _agent_workflow() if not independent else None
+        if workflow is not None:
+            saved = workflow.lookup()
+            if saved is not None:
+                return _workflow_result(saved)
         config = load_config()
         runtime_config = resolve_runtime_config()
         root = resolve_output_dir(output_dir, config)
@@ -552,6 +600,9 @@ class AgentSDKNode(_AgentNodeBase):
             "flat_outputs": True,
             "script_python": sys.executable,
         }
+        if workflow is not None:
+            job['publish_to_oss'] = bool(publish_to_oss)
+            return _workflow_result(workflow.submit(job))
         if independent:
             from server import PromptServer
 
