@@ -1,7 +1,6 @@
 import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 
-const PROGRESS_EVENT = "comfyui-llm-agent-progress";
 const LEGACY_OUTPUTS = new Set(["output_path", "artifacts_json", "state_json"]);
 const AGENT_NODE_NAME = "ComfyUI-LLM Agent SDK";
 
@@ -52,10 +51,6 @@ function scheduleSkillOptionsRefresh(node) {
     });
 }
 
-function findNode(nodeId) {
-    return app.graph?._nodes?.find((node) => String(node.id) === String(nodeId));
-}
-
 function removeLegacyOutputs(node) {
     for (let index = (node.outputs?.length || 0) - 1; index >= 0; index -= 1) {
         if (LEGACY_OUTPUTS.has(node.outputs[index]?.name)) {
@@ -96,48 +91,6 @@ app.registerExtension({
                 publishToOss.draw = () => {};
             }
 
-            const log = document.createElement("textarea");
-            log.readOnly = true;
-            log.placeholder = "运行时将显示 Skill 路由、模型状态和工具调用过程";
-            log.style.cssText = [
-                "width:100%",
-                "height:260px",
-                "box-sizing:border-box",
-                "resize:none",
-                "padding:8px",
-                "border:1px solid #555",
-                "border-radius:6px",
-                "background:#171717",
-                "color:#ddd",
-                "font:14px/1.65 monospace",
-            ].join(";");
-            const progressWidget = this.addDOMWidget(
-                "agent_progress",
-                "AGENT_PROGRESS",
-                log,
-                {
-                    getValue: () => "",
-                    setValue: () => {},
-                },
-            );
-            progressWidget.computeSize = (width) => [width, 274];
-            progressWidget.serializeValue = () => undefined;
-            this.size[0] = Math.max(this.size[0], 620);
-            this._agentProgressLines = [];
-            this._agentProgressElement = log;
-            this._appendAgentProgress = (event, includeTime = true) => {
-                if (event.event === "reset") {
-                    this._agentProgressLines = [];
-                }
-                const message = event.message || event.event;
-                const prefix = includeTime
-                    ? `[${new Date().toLocaleTimeString("zh-CN", { hour12: false })}] `
-                    : "";
-                this._agentProgressLines.push(`${prefix}${message}`);
-                this._agentProgressLines = this._agentProgressLines.slice(-100);
-                log.value = this._agentProgressLines.join("\n");
-                log.scrollTop = log.scrollHeight;
-            };
             return result;
         };
 
@@ -148,23 +101,5 @@ app.registerExtension({
             scheduleSkillOptionsRefresh(this);
             return result;
         };
-
-        const originalOnExecuted = nodeType.prototype.onExecuted;
-        nodeType.prototype.onExecuted = function (message) {
-            originalOnExecuted?.apply(this, arguments);
-            const events = message?.agent_progress;
-            if (!Array.isArray(events) || !events.length || !this._appendAgentProgress) {
-                return;
-            }
-            this._agentProgressLines = [];
-            for (const event of events) {
-                this._appendAgentProgress(event, false);
-            }
-        };
     },
-});
-
-api.addEventListener(PROGRESS_EVENT, ({ detail }) => {
-    const node = findNode(detail?.node_id);
-    node?._appendAgentProgress?.(detail);
 });
