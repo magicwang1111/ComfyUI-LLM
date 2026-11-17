@@ -16,12 +16,15 @@ Crop bounds apply to the EXIF-oriented original. Inspect the output. These sampl
 
 ```text
 python scripts/crop_garment.py --source ORIGINAL_01 --output CROP.jpg --bounds 0 0.21 1 1 --metadata RUN/crop.json
+python scripts/run.py prepare --run-dir RUN --pid EXACT_19_DIGITS --prompt-text FULL_SCRIPT --wan-prompt-text ENGLISH_SHOOTING_PROMPT --duration DURATION_SECONDS --caption-text CAPTION --hashtags TAG1 TAG2
 python scripts/run.py submit --run-dir RUN --base-url BASE --workflow API_WORKFLOW.json --face FACE.jpg --garment CROP.jpg --prompt PROMPT.txt --pid EXACT_19_DIGITS --duration DURATION_SECONDS --model 3.0-prime
 python scripts/run.py poll --run-dir RUN --base-url BASE
 python scripts/download_video.py --run-dir RUN --base-url BASE
 ```
 
 DURATION_SECONDS is the duration chosen from the current request or selected Markdown, not a fixed 15. When submitting RUN/workflow.json from prepare, omit --duration to inherit its duration. An explicit --duration overrides the workflow, so keep the prompt timing consistent.
+
+`--prompt` selects the complete review/database script, not the text sent to Wan. Submission always reads `RUN/wan-prompt.txt` saved by prepare and checks both texts against their prepared hashes. Prepare both versions together after changes. See [script-rules.md](script-rules.md) for deriving the English shooting version and excluding dialogue summaries/translations. Missing or Chinese/CJK-containing Wan prompts fail before uploads or generation; there is no fallback to the full script.
 
 Review existing intents for the product/run before submission. The helper guards one directory, not a global deduplication database. Intent without `job.json` means outcome may be unknown. Reconcile the saved client ID/fingerprint against queue/history/scheduler. Do not repeat `/prompt` to find out. Inspect definite validation rejection before any newly authorized attempt.
 

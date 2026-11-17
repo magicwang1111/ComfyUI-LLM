@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -48,6 +49,14 @@ def login():
     assert session.cookies.get('jwt_token'), 'No jwt_token login cookie'
     return session
 
+def validate_wan_prompt(text):
+    if not text or not text.strip():
+        raise ValueError('Prepare requires --wan-prompt-text with English-only shooting instructions, without dialogue summaries or translations.')
+    if re.search(r'[\u2e80-\u9fff\uf900-\ufaff\U00020000-\U000323af]', text):
+        raise ValueError('Wan prompt contains Chinese/CJK characters; translate shooting instructions into English and omit Chinese dialogue translations.')
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
 def prepare(args):
     if (RUN / 'submission-intent.json').exists():
         raise ValueError('Submission intent exists; resume this task instead of changing its prompt.')
@@ -56,6 +65,8 @@ def prepare(args):
         raise ValueError('Prepared product PID does not match the requested PID.')
     if not args.prompt_text or not args.prompt_text.strip():
         raise ValueError('Prepare requires the complete video prompt in --prompt-text.')
+    wan_prompt = getattr(args, 'wan_prompt_text', None)
+    wan_digest = validate_wan_prompt(wan_prompt)
     duration = args.duration if args.duration is not None else 15
     caption = getattr(args, 'caption_text', None)
     hashtags = getattr(args, 'hashtags', None)
@@ -70,18 +81,20 @@ def prepare(args):
     if getattr(args, 'execution_notes', None) is not None:
         notes_path.write_text(args.execution_notes, encoding='utf-8')
     report = review_prompt(args.prompt_text, duration, getattr(args, 'rules_file', None))
+    report['wan_prompt_sha256'] = wan_digest
     save('prompt-review.json', report)
     workflow = json.loads(WORKFLOW_TEMPLATE.read_text(encoding='utf-8'))
-    workflow['61']['inputs']['prompt'] = args.prompt_text
+    workflow['61']['inputs']['prompt'] = wan_prompt
     workflow['61']['inputs']['duration'] = duration
     workflow['61']['inputs']['model_version'] = args.model
     workflow['79']['inputs']['image'] = ''
     workflow['78']['inputs']['image'] = ''
     save('workflow.json', workflow)
     (RUN / 'prompt.txt').write_text(args.prompt_text, encoding='utf-8')
+    (RUN / 'wan-prompt.txt').write_text(wan_prompt, encoding='utf-8')
     save('analysis.json', {'pid': args.pid, 'title': manifest['title'], 'source_url': manifest['source_url'], 'rules_file': report['rules_file']})
     status('prepared', pid=args.pid)
-    print(json.dumps({'stage': 'prepared', 'workflow': str(RUN / 'workflow.json'), 'prompt': str(RUN / 'prompt.txt'), 'post_copy': str(RUN / 'post-copy.json') if (RUN / 'post-copy.json').exists() else None, 'execution_notes': str(notes_path) if notes_path.exists() else None, 'review': str(RUN / 'prompt-review.json'), 'structure_warnings': report['structure_warnings'], 'semantic_review_required': True}, ensure_ascii=False))
+    print(json.dumps({'stage': 'prepared', 'workflow': str(RUN / 'workflow.json'), 'prompt': str(RUN / 'prompt.txt'), 'wan_prompt': str(RUN / 'wan-prompt.txt'), 'post_copy': str(RUN / 'post-copy.json') if (RUN / 'post-copy.json').exists() else None, 'execution_notes': str(notes_path) if notes_path.exists() else None, 'review': str(RUN / 'prompt-review.json'), 'structure_warnings': report['structure_warnings'], 'semantic_review_required': True}, ensure_ascii=False))
 
 
 def submit(args):
@@ -104,6 +117,13 @@ def submit(args):
     if previous_review.exists():
         if previous['rules_sha256'] != report['rules_sha256']:
             report['structure_warnings'].append('Script rules changed after prepare; review the prompt against the current specification.')
+    wan_path = RUN / 'wan-prompt.txt'
+    if not wan_path.is_file():
+        raise ValueError('Missing wan-prompt.txt; run prepare with both --prompt-text and --wan-prompt-text before submitting.')
+    wan_prompt = wan_path.read_text(encoding='utf-8-sig')
+    report['wan_prompt_sha256'] = validate_wan_prompt(wan_prompt)
+    if any(previous.get(key) != report[key] for key in ('prompt_sha256', 'wan_prompt_sha256')):
+        raise ValueError('Prompt pair differs from prepare; prepare the full script and English Wan prompt together before submitting.')
     save('prompt-submit-review.json', report)
     print(json.dumps({'review': str(RUN / 'prompt-submit-review.json'), 'structure_warnings': report['structure_warnings'], 'semantic_review_required': True}, ensure_ascii=False))
     s = login()
@@ -113,7 +133,7 @@ def submit(args):
         r.raise_for_status()
         info = r.json()
         workflow[node]['inputs']['image'] = (info.get('subfolder','') + '/' + info['name']).lstrip('/')
-    workflow['61']['inputs'].update(prompt=prompt_text, duration=duration, model_version=args.model, resolution='720P', aspect_ratio='9:16', audio_generation='Enabled', enhance_prompt='Disabled')
+    workflow['61']['inputs'].update(prompt=wan_prompt, duration=duration, model_version=args.model, resolution='720P', aspect_ratio='9:16', audio_generation='Enabled', enhance_prompt='Disabled')
     r = s.get(BASE + '/object_info', timeout=60)
     r.raise_for_status()
     schemas = r.json()
@@ -183,8 +203,9 @@ if __name__ == '__main__':
     parser.add_argument('--workflow',type=Path)
     parser.add_argument('--face',type=Path)
     parser.add_argument('--garment',type=Path)
-    parser.add_argument('--prompt',type=Path)
-    parser.add_argument('--prompt-text')
+    parser.add_argument('--prompt',type=Path, help='Full review/database script; defaults to RUN/prompt.txt. Wan always uses the prepared RUN/wan-prompt.txt.')
+    parser.add_argument('--prompt-text', help='Complete script for review and database copy, including dialogue translations.')
+    parser.add_argument('--wan-prompt-text', help='English-only shooting instructions derived from the full script; omit sections 7/8 and preserve per-shot English dialogue verbatim.')
     parser.add_argument('--execution-notes', help='Product verification, crop selection, history scope and review notes; saved separately from the video prompt.')
     parser.add_argument('--caption-text', help='English TikTok posting caption, generated using the posting rules.')
     parser.add_argument('--hashtags', nargs='+', help='TikTok hashtags as separate arguments.')

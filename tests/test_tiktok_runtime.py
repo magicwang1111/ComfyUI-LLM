@@ -14,6 +14,23 @@ spec = importlib.util.spec_from_file_location(
 )
 run = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(run)
+from fashion_prompt import read_generation_copy
+
+FULL_SCRIPT = '''## 六、分镜完整脚本
+时间戳：00:00–00:15
+镜头语言：镜头从全身推进至领口。
+英文口播：
+博主："Look at this neckline!"
+## 七、完整英文口播
+博主："Look at this neckline!"
+## 八、完整中文参考
+博主："看看这个领口！"
+'''
+WAN_PROMPT = '''Only labeled shot dialogue is spoken, in American English. No subtitles or screen text.
+Shot 00:00–00:15: Move from a full-body view to the neckline.
+Host dialogue: "Look at this neckline!"
+'''
+
 collector_spec = importlib.util.spec_from_file_location('tiktok_collect', Path(spec.origin).with_name('collect_product.py'))
 collector = importlib.util.module_from_spec(collector_spec)
 collector_spec.loader.exec_module(collector)
@@ -65,15 +82,19 @@ class TikTokRuntimeTests(unittest.TestCase):
             directory = Path(temp)
             (directory / 'product').mkdir()
             (directory / 'product/manifest.json').write_text(json.dumps({'pid': '1731259010175242313', 'title': 'Verified dress', 'source_url': 'https://example.com/product'}), encoding='utf-8')
-            args = SimpleNamespace(pid='1731259010175242313', prompt_text='Complete new product prompt', duration=15, model='3.0-prime', execution_notes='核验：商品标题匹配。\n去重范围：仅本商品历史。', caption_text='Little details 💚', hashtags=['#OutfitInspo', '#CasualStyle'])
+            args = SimpleNamespace(pid='1731259010175242313', prompt_text=FULL_SCRIPT, wan_prompt_text=WAN_PROMPT, duration=15, model='3.0-prime', execution_notes='核验：商品标题匹配。\n去重范围：仅本商品历史。', caption_text='Little details 💚', hashtags=['#OutfitInspo', '#CasualStyle'])
             original = run.WORKFLOW_TEMPLATE.read_bytes()
             with patch.object(run, 'RUN', directory), patch.object(run, 'login') as login:
                 run.prepare(args)
                 rendered = json.loads((directory / 'workflow.json').read_text(encoding='utf-8'))
-                self.assertEqual(rendered['61']['inputs']['prompt'], args.prompt_text)
+                self.assertEqual(rendered['61']['inputs']['prompt'], args.wan_prompt_text)
                 self.assertEqual(rendered['61']['inputs']['duration'], 15)
                 self.assertEqual(rendered['79']['inputs']['image'], '')
                 self.assertEqual((directory / 'prompt.txt').read_text(encoding='utf-8'), args.prompt_text)
+                self.assertEqual((directory / 'wan-prompt.txt').read_text(encoding='utf-8'), args.wan_prompt_text)
+                copy = read_generation_copy(directory)
+                self.assertEqual(copy['english'], '博主："Look at this neckline!"')
+                self.assertEqual(copy['chinese'], '博主："看看这个领口！"')
                 notes_path = directory / 'execution-notes.md'
                 self.assertEqual(notes_path.read_text(encoding='utf-8'), args.execution_notes)
                 self.assertNotIn(args.execution_notes, json.dumps(rendered, ensure_ascii=False))
@@ -86,6 +107,7 @@ class TikTokRuntimeTests(unittest.TestCase):
                 self.assertTrue(review['structure_warnings'])
                 self.assertTrue(review['semantic_review_required'])
                 self.assertEqual(review['prompt_sha256'], run.hashlib.sha256(args.prompt_text.encode()).hexdigest())
+                self.assertEqual(review['wan_prompt_sha256'], run.hashlib.sha256(args.wan_prompt_text.encode()).hexdigest())
                 self.assertIn('创意词条自行抽取规则', review['rules_text'])
                 args.execution_notes = None
                 run.prepare(args)
@@ -99,6 +121,54 @@ class TikTokRuntimeTests(unittest.TestCase):
                 login.assert_not_called()
             self.assertEqual(run.WORKFLOW_TEMPLATE.read_bytes(), original)
 
+    def test_prepare_rejects_missing_or_cjk_wan_prompt_before_writing(self):
+        for text in (None, '  ', 'Shot one: 展示领口', 'Host: 﨑', 'Host: \U00020000'):
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp)
+                (directory / 'product').mkdir()
+                (directory / 'product/manifest.json').write_text('{"pid": "123"}', encoding='utf-8')
+                args = SimpleNamespace(pid='123', prompt_text=FULL_SCRIPT, wan_prompt_text=text)
+                with patch.object(run, 'RUN', directory), patch.object(run, 'login') as login:
+                    with self.assertRaises(ValueError):
+                        run.prepare(args)
+                    login.assert_not_called()
+                self.assertFalse((directory / 'workflow.json').exists())
+                self.assertFalse((directory / 'prompt.txt').exists())
+
+    def test_submit_rejects_missing_cjk_or_stale_prompt_pair_before_network(self):
+        for change, message in (('missing', 'Missing wan-prompt'), ('cjk', 'Chinese/CJK'),
+                                ('wan', 'pair differs'), ('source', 'pair differs'), ('legacy', 'pair differs')):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp)
+                (directory / 'product').mkdir()
+                pid = '1731259010175242313'
+                (directory / 'product/manifest.json').write_text(json.dumps({'pid': pid, 'title': 'Dress', 'source_url': 'https://example.com/product'}), encoding='utf-8')
+                args = SimpleNamespace(pid=pid, prompt_text=FULL_SCRIPT, wan_prompt_text=WAN_PROMPT,
+                                       duration=15, model='3.0-prime', workflow=directory / 'workflow.json',
+                                       prompt=directory / 'prompt.txt', face=directory / 'face.jpg', garment=directory / 'garment.jpg')
+                args.face.write_bytes(b'face')
+                args.garment.write_bytes(b'garment')
+                with patch.object(run, 'RUN', directory), patch.object(run, 'login') as login:
+                    run.prepare(args)
+                    wan_path = directory / 'wan-prompt.txt'
+                    if change == 'missing':
+                        wan_path.unlink()
+                    elif change == 'cjk':
+                        wan_path.write_text(WAN_PROMPT + '中文翻译', encoding='utf-8')
+                    elif change == 'wan':
+                        wan_path.write_text(WAN_PROMPT + 'New direction.', encoding='utf-8')
+                    elif change == 'source':
+                        args.prompt.write_text(FULL_SCRIPT + '修改脚本', encoding='utf-8')
+                    else:
+                        review_path = directory / 'prompt-review.json'
+                        review = json.loads(review_path.read_text(encoding='utf-8'))
+                        del review['wan_prompt_sha256']
+                        review_path.write_text(json.dumps(review), encoding='utf-8')
+                    with self.assertRaisesRegex(ValueError, message):
+                        run.submit(args)
+                    login.assert_not_called()
+                    self.assertFalse((directory / 'submission-intent.json').exists())
+
     def test_duration_survives_prepare_and_submit(self):
         for selected, override, expected in ((None, None, 15), (12, None, 12), (20, None, 20), (-1, None, -1), (15, 20, 20)):
             with self.subTest(selected=selected, override=override), tempfile.TemporaryDirectory() as temp:
@@ -106,7 +176,7 @@ class TikTokRuntimeTests(unittest.TestCase):
                 (directory / 'product').mkdir()
                 pid = '1731259010175242313'
                 (directory / 'product/manifest.json').write_text(json.dumps({'pid': pid, 'title': 'Dress', 'source_url': 'https://example.com/product'}), encoding='utf-8')
-                args = SimpleNamespace(pid=pid, prompt_text='Prompt with selected timing', duration=selected, model='3.0-prime', execution_notes='Private operational notes, not video directions',
+                args = SimpleNamespace(pid=pid, prompt_text=FULL_SCRIPT, wan_prompt_text=WAN_PROMPT, duration=selected, model='3.0-prime', execution_notes='Private operational notes, not video directions',
                                        workflow=directory / 'workflow.json', prompt=directory / 'prompt.txt',
                                        face=directory / 'face.jpg', garment=directory / 'garment.jpg')
                 args.face.write_bytes(b'face')
@@ -121,10 +191,15 @@ class TikTokRuntimeTests(unittest.TestCase):
                     self.assertEqual(prepared['61']['inputs']['duration'], prepared_duration)
                     self.assertEqual(json.loads((directory / 'prompt-review.json').read_text(encoding='utf-8'))['duration'], prepared_duration)
                     session.get.return_value.json.return_value = {node['class_type']: {'input': {'required': {}}} for node in prepared.values()}
+                    # A stale workflow must not override the saved English version at submit.
+                    prepared['61']['inputs']['prompt'] = args.prompt_text
+                    args.workflow.write_text(json.dumps(prepared), encoding='utf-8')
                     args.duration = override
                     run.submit(args)
                 submitted = session.post.call_args.kwargs['json']['prompt']
-                self.assertEqual(submitted['61']['inputs']['prompt'], args.prompt_text)
+                self.assertEqual(submitted['61']['inputs']['prompt'], args.wan_prompt_text)
+                self.assertNotIn('看看这个领口', submitted['61']['inputs']['prompt'])
+                self.assertEqual(submitted['61']['inputs']['prompt'].count('Look at this neckline!'), 1)
                 self.assertNotIn(args.execution_notes, json.dumps(submitted))
                 self.assertEqual(submitted['61']['inputs']['duration'], expected)
                 self.assertEqual(json.loads((directory / 'workflow-rendered.json').read_text(encoding='utf-8'))['61']['inputs']['duration'], expected)
@@ -138,7 +213,10 @@ class TikTokRuntimeTests(unittest.TestCase):
                 path = directory / name
                 path.write_text('{}' if name == 'workflow' else 'Actual submitted prompt', encoding='utf-8')
                 setattr(args, name, path)
-            prepared = {'rules_sha256': 'older-specification'}
+            (directory / 'wan-prompt.txt').write_text(WAN_PROMPT, encoding='utf-8')
+            prepared = {'rules_sha256': 'older-specification',
+                        'prompt_sha256': run.hashlib.sha256(args.prompt.read_bytes()).hexdigest(),
+                        'wan_prompt_sha256': run.hashlib.sha256(WAN_PROMPT.encode()).hexdigest()}
             (directory / 'prompt-review.json').write_text(json.dumps(prepared), encoding='utf-8')
             with patch.object(run, 'RUN', directory), patch.object(run, 'login', side_effect=RuntimeError('network intentionally stopped')):
                 with self.assertRaisesRegex(RuntimeError, 'intentionally stopped'):
@@ -168,7 +246,10 @@ class TikTokRuntimeTests(unittest.TestCase):
                 path = directory / name
                 path.write_text('{}' if name == 'workflow' else 'Saved prompt', encoding='utf-8')
                 setattr(args, name, path)
-            (directory / 'prompt-review.json').write_text(json.dumps({'rules_file': 'alternate.md', 'rules_sha256': 'old'}), encoding='utf-8')
+            (directory / 'wan-prompt.txt').write_text(WAN_PROMPT, encoding='utf-8')
+            (directory / 'prompt-review.json').write_text(json.dumps({'rules_file': 'alternate.md', 'rules_sha256': 'old',
+                'prompt_sha256': run.hashlib.sha256(args.prompt.read_bytes()).hexdigest(),
+                'wan_prompt_sha256': run.hashlib.sha256(WAN_PROMPT.encode()).hexdigest()}), encoding='utf-8')
             rules_module = importlib.import_module('fashion_prompt')
             with patch.object(run, 'RUN', directory), patch.object(rules_module, 'RULES_DIR', directory):
                 with patch.object(run, 'login', side_effect=RuntimeError('stop before network')):
