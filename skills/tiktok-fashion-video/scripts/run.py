@@ -205,7 +205,7 @@ if __name__ == '__main__':
     parser.add_argument('--garment',type=Path)
     parser.add_argument('--prompt',type=Path, help='Full review/database script; defaults to RUN/prompt.txt. Wan always uses the prepared RUN/wan-prompt.txt.')
     parser.add_argument('--prompt-text', help='Complete script for review and database copy, including dialogue translations.')
-    parser.add_argument('--wan-prompt-text', help='English-only shooting instructions derived from the full script; omit sections 7/8 and preserve per-shot English dialogue verbatim.')
+    parser.add_argument('--wan-prompt-text', help='Full English translation of the script excluding only sections 7/8; preserve all remaining sections, fields and details without summarizing, and keep existing English dialogue verbatim.')
     parser.add_argument('--execution-notes', help='Product verification, crop selection, history scope and review notes; saved separately from the video prompt.')
     parser.add_argument('--caption-text', help='English TikTok posting caption, generated using the posting rules.')
     parser.add_argument('--hashtags', nargs='+', help='TikTok hashtags as separate arguments.')

@@ -27,9 +27,9 @@ python fashion_prompt.py check --rules-file "开箱视频规则.md" --prompt RUN
 
 `prompt-review.json` 与 `prompt-submit-review.json` 保存所选文件名、规范全文及 SHA-256、提示词 SHA-256 和辅助检查结果。新增或修改 Markdown 无需重启，下一次执行读取最新内容。
 
-`run.py prepare --prompt-text FULL_SCRIPT --wan-prompt-text ENGLISH_SHOOTING_PROMPT --execution-notes NOTES` 同时保存完整创作脚本 `prompt.txt` 和实际提交给 Wan 的纯英文拍摄指令 `wan-prompt.txt`。Agent 从完整脚本派生英文版：排除默认规范第7部分重复口播汇总和第8部分中文翻译，其余拍摄指令、标题和说话者标签全部翻译成英文；逐镜英文台词逐字保留，仅在对应分镜出现一次，人物、服装、时间轴、声音和镜头约束保持一致。其他规范按内容用途排除汇总及翻译，不机械删除相同编号。英文版使用简洁标题，不复制完整十三部分的审阅结构。只有标明的逐镜对白可以被说出，其余内容均为拍摄指令。
+`run.py prepare --prompt-text FULL_SCRIPT --wan-prompt-text ENGLISH_SHOOTING_PROMPT --execution-notes NOTES` 同时保存完整创作脚本 `prompt.txt` 和实际提交给 Wan 的纯英文拍摄指令 `wan-prompt.txt`。英文版是完整翻译，不是精简或重组：仅删除默认规范第7部分重复口播汇总和第8部分中文翻译，其余标题、章节、子章节、字段、列表、分镜细节和限制全部按原顺序与层级保留并翻译成英文。大章节使用阿拉伯数字1–6、9–13，保留编号空缺，不重新编号。服装判断、基础设定、人物穿搭、场景剧情、拍摄表演、完整分镜、整体表演、声音、一致性、负面提示词和最终执行要求均完整保留；第13部分逐镜执行汇总即使与第6部分重复也不得删减、合并或压缩。已有英文对白和英文负面提示词逐字保留，不从中文参考重新生成台词。其他规范仅按用途排除对应的口播汇总及翻译章节，其余结构和内容完整保留。在声音或最终执行要求中明确：只有标明的逐镜对白可以被说出，其余内容均为拍摄指令。prepare 和 submit 将这份完整英文文本直接传给 Wan，不再提取、删节或截断。
 
-prepare 和 submit 都检查英文版非空且无中文/CJK字符，并记录两份文本的 SHA-256；任一文本修改后必须一起重新 prepare，旧的未提交任务缺少英文版也需要重新 prepare。已提交任务继续 poll/download，不重新生成。语义一致性、台词原文和重复内容由 Agent 复核，字符检查不能证明翻译正确。数据库仍从 `prompt.txt` 提取中英文文案，不读取 `wan-prompt.txt`，无需修改数据库。
+prepare 和 submit 都检查英文版非空且无中文/CJK字符，并记录两份文本的 SHA-256；任一文本修改后必须一起重新 prepare，旧的未提交任务缺少英文版也需要重新 prepare。已提交任务继续 poll/download，不重新生成。Agent 须逐章逐字段核对剩余内容是否全部翻译、语义是否一致、英文台词是否原样保留；字符检查不能证明翻译正确或完整。数据库仍从 `prompt.txt` 提取中英文文案，不读取 `wan-prompt.txt`，无需修改数据库。
 
 核验依据、裁剪选择理由、去重范围、未确认事项和复核说明仍保存到 `execution-notes.md`。修改脚本时省略 notes 参数会保留已有说明。商品原始信息、裁剪坐标、提交结果和质检结果仍使用各自的记录文件。创作脚本中保留可见商品事实和具体拍摄限制，不混入程序执行汇报。
 
